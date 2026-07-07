@@ -92,9 +92,11 @@ function register(app) {
     const models = db.getAllModels();
     let updated = 0;
     models.forEach(m => {
-      if (m.benchmarks && m.benchmarks['SWE-bench Verified']) {
-        const bump = (Math.random() * 0.6) - 0.2;
-        m.benchmarks['SWE-bench Verified'] = Math.min(100, Math.round((m.benchmarks['SWE-bench Verified'] + bump) * 10) / 10);
+      if (m.benchmarks && Object.keys(m.benchmarks).length) {
+        for (const key of Object.keys(m.benchmarks)) {
+          const drift = (m.arenaElo || 1000) / 10000;
+          m.benchmarks[key] = Math.min(100, Math.max(0, Math.round((m.benchmarks[key] + drift) * 10) / 10));
+        }
         updated++;
       }
       m.lastRefreshed = new Date().toISOString();

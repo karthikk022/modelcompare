@@ -76,15 +76,16 @@ function estimateScores(inp, outp, ctxLen) {
   else if (avgPrice > 2) base = 65;
   else if (avgPrice > 0.5) base = 55;
   const ctxBonus = ctxLen ? Math.min(15, Math.log(ctxLen / 1000) * 3) : 0;
-  const noise = () => Math.round((base + ctxBonus + (Math.random() * 12 - 6)) * 10) / 10;
+  const offset = inp != null && outp != null ? ((inp * 7 + outp * 3) % 12) - 6 : 0;
+  const v = (cap) => Math.min(98, Math.round((base + ctxBonus + offset + cap) * 10) / 10);
   return {
-    reasoning: Math.min(98, noise()),
-    coding: Math.min(96, noise()),
-    knowledge: Math.min(97, noise()),
-    math: Math.min(98, noise()),
-    agentic: Math.min(90, noise() - 5),
-    multimodal: Math.min(85, noise() - 10),
-    instructionFollowing: Math.min(95, noise() + 2),
+    reasoning: v(0),
+    coding: v(-2),
+    knowledge: v(1),
+    math: v(-1),
+    agentic: v(-7),
+    multimodal: v(-12),
+    instructionFollowing: v(4),
   };
 }
 
