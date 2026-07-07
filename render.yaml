@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: modelcompare
+    runtime: node
+    repo: https://github.com/karthikchinnaiyan/modelcompare
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          type: web
+          name: modelcompare
+          property: host
+    disk:
+      name: modelcompare-data
+      mountPath: /app/data
+      sizeGB: 1

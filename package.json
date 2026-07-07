@@ -1,0 +1,25 @@
+{
+  "name": "modelcompare",
+  "version": "1.0.0",
+  "description": "AI Model Comparison Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0"
+  },
+  "keywords": [
+    "chatbot",
+    "ai",
+    "nodejs",
+    "express"
+  ],
+  "author": "Claude Code Assistant",
+  "license": "MIT"
+}

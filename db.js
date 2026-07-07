@@ -1,0 +1,434 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+const DB_PATH = path.join(__dirname, 'data', 'models.db');
+const DATA_DIR = path.join(__dirname, 'data');
+
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+// ========== SCHEMA ==========
+db.exec(`
+  CREATE TABLE IF NOT EXISTS models (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider TEXT DEFAULT '',
+    family TEXT DEFAULT '',
+    logo TEXT DEFAULT '',
+    color TEXT DEFAULT '#6b7280',
+    release_date TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    context_window INTEGER,
+    output_limit INTEGER,
+    architecture TEXT DEFAULT 'Transformer',
+    parameters TEXT,
+    input_price REAL,
+    output_price REAL,
+    speed REAL,
+    arena_elo REAL,
+    benchmarks TEXT DEFAULT '{}',
+    scores TEXT DEFAULT '{}',
+    features TEXT DEFAULT '[]',
+    best_for TEXT DEFAULT '[]',
+    strengths TEXT DEFAULT '',
+    weaknesses TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    predecessor TEXT,
+    likes INTEGER DEFAULT 0,
+    downloads INTEGER DEFAULT 0,
+    pipeline TEXT DEFAULT 'text-generation',
+    last_refreshed TEXT,
+    created_at TEXT,
+    updated_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT UNIQUE NOT NULL,
+    name TEXT DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    last_used TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS model_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL,
+    snapshot_at TEXT NOT NULL DEFAULT (datetime('now')),
+    input_price REAL,
+    output_price REAL,
+    speed REAL,
+    arena_elo REAL,
+    benchmarks TEXT DEFAULT '{}',
+    scores TEXT DEFAULT '{}',
+    source TEXT DEFAULT 'manual'
+  );
+  CREATE INDEX IF NOT EXISTS idx_model_history_model ON model_history(model_id);
+  CREATE INDEX IF NOT EXISTS idx_model_history_time ON model_history(snapshot_at);
+
+  CREATE TABLE IF NOT EXISTS usage_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL,
+    model_name TEXT DEFAULT '',
+    slug TEXT DEFAULT '',
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    cost REAL DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    finish_reason TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_usage_log_model ON usage_log(model_id);
+  CREATE INDEX IF NOT EXISTS idx_usage_log_time ON usage_log(created_at);
+`);
+
+// Migration: add open_router_slug column if missing
+try { db.exec("ALTER TABLE models ADD COLUMN open_router_slug TEXT DEFAULT ''"); } catch (e) { /* already exists */ }
+
+// ========== MIGRATE FROM JSON ==========
+function migrateFromJson() {
+  const jsonPath = path.join(__dirname, 'models-data', 'models.json');
+  if (!fs.existsSync(jsonPath)) return;
+  
+  const count = db.prepare('SELECT COUNT(*) as c FROM models').get().c;
+  if (count > 0) return; // already migrated
+  
+  const models = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  if (!Array.isArray(models) || !models.length) return;
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO models (id, name, provider, family, logo, color, release_date, description,
+      context_window, output_limit, architecture, parameters, input_price, output_price, speed, arena_elo,
+      benchmarks, scores, features, best_for, strengths, weaknesses, tags, predecessor, likes, downloads,
+      pipeline, last_refreshed, created_at, updated_at)
+    VALUES (@id, @name, @provider, @family, @logo, @color, @releaseDate, @description,
+      @contextWindow, @outputLimit, @architecture, @parameters, @inputPrice, @outputPrice, @speed, @arenaElo,
+      @benchmarks, @scores, @features, @bestFor, @strengths, @weaknesses, @tags, @predecessor, @likes, @downloads,
+      @pipeline, @lastRefreshed, @createdAt, @updatedAt)
+  `);
+
+  const tx = db.transaction(() => {
+    for (const m of models) {
+      insert.run({
+        id: m.id,
+        name: m.name,
+        provider: m.provider || '',
+        family: m.family || '',
+        logo: m.logo || '',
+        color: m.color || '#6b7280',
+        releaseDate: m.releaseDate || '',
+        description: m.description || '',
+        contextWindow: m.contextWindow ?? null,
+        outputLimit: m.outputLimit ?? null,
+        architecture: m.architecture || 'Transformer',
+        parameters: m.parameters || null,
+        inputPrice: m.inputPrice ?? null,
+        outputPrice: m.outputPrice ?? null,
+        speed: m.speed ?? null,
+        arenaElo: m.arenaElo ?? null,
+        benchmarks: JSON.stringify(m.benchmarks || {}),
+        scores: JSON.stringify(m.scores || {}),
+        features: JSON.stringify(m.features || []),
+        bestFor: JSON.stringify(m.bestFor || []),
+        strengths: m.strengths || '',
+        weaknesses: m.weaknesses || '',
+        tags: JSON.stringify(m.tags || []),
+        predecessor: m.predecessor || null,
+        likes: m.likes || 0,
+        downloads: m.downloads || 0,
+        pipeline: m.pipeline || 'text-generation',
+        lastRefreshed: m.lastRefreshed || null,
+        createdAt: m.createdAt || m.created_at || new Date().toISOString(),
+        updatedAt: m.updatedAt || m.updated_at || new Date().toISOString(),
+      });
+    }
+  });
+  tx();
+  console.log(`Migrated ${models.length} models from JSON to SQLite`);
+}
+
+// ========== QUERIES ==========
+const stmts = {
+  getAll: db.prepare('SELECT * FROM models ORDER BY name'),
+  getById: db.prepare('SELECT * FROM models WHERE id = ?'),
+  insert: db.prepare(`INSERT INTO models (id, name, provider, family, logo, color, release_date, description,
+    context_window, output_limit, architecture, parameters, input_price, output_price, speed, arena_elo,
+    benchmarks, scores, features, best_for, strengths, weaknesses, tags, predecessor, likes, downloads,
+    pipeline, last_refreshed, created_at, updated_at, open_router_slug)
+    VALUES (@id, @name, @provider, @family, @logo, @color, @releaseDate, @description,
+    @contextWindow, @outputLimit, @architecture, @parameters, @inputPrice, @outputPrice, @speed, @arenaElo,
+    @benchmarks, @scores, @features, @bestFor, @strengths, @weaknesses, @tags, @predecessor, @likes, @downloads,
+    @pipeline, @lastRefreshed, @createdAt, @updatedAt, @openRouterSlug)`),
+  update: db.prepare(`UPDATE models SET name=@name, provider=@provider, family=@family, logo=@logo, color=@color,
+    release_date=@releaseDate, description=@description, context_window=@contextWindow, output_limit=@outputLimit,
+    architecture=@architecture, parameters=@parameters, input_price=@inputPrice, output_price=@outputPrice,
+    speed=@speed, arena_elo=@arenaElo, benchmarks=@benchmarks, scores=@scores, features=@features,
+    best_for=@bestFor, strengths=@strengths, weaknesses=@weaknesses, tags=@tags, predecessor=@predecessor,
+    likes=@likes, downloads=@downloads, pipeline=@pipeline, last_refreshed=@lastRefreshed, updated_at=@updatedAt,
+    open_router_slug=@openRouterSlug WHERE id=@id`),
+  delete: db.prepare('DELETE FROM models WHERE id = ?'),
+  upsertChat: db.prepare('INSERT INTO chat_history (role, content, created_at) VALUES (?, ?, ?)'),
+  getChat: db.prepare('SELECT * FROM chat_history ORDER BY created_at ASC LIMIT 100'),
+  insertHistory: db.prepare(`INSERT INTO model_history (model_id, snapshot_at, input_price, output_price, speed, arena_elo, benchmarks, scores, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  getHistory: db.prepare('SELECT * FROM model_history WHERE model_id = ? ORDER BY snapshot_at DESC LIMIT 50'),
+  getHistoryLatest: db.prepare('SELECT snapshot_at, model_id, MAX(id) as id FROM model_history GROUP BY model_id'),
+  getLatestSnapshot: db.prepare('SELECT * FROM model_history WHERE model_id = ? ORDER BY snapshot_at DESC LIMIT 1'),
+  getRecentChanges: db.prepare(`SELECT mh.*, m.name, m.provider, m.color FROM model_history mh JOIN models m ON m.id = mh.model_id WHERE mh.id IN (SELECT MAX(id) FROM model_history GROUP BY model_id) ORDER BY mh.snapshot_at DESC`),
+  getAlertConfig: db.prepare('SELECT value FROM settings WHERE key = ?'),
+  logUsage: db.prepare('INSERT INTO usage_log (model_id, model_name, slug, prompt_tokens, completion_tokens, total_tokens, cost, latency_ms, finish_reason) VALUES (@modelId, @modelName, @slug, @promptTokens, @completionTokens, @totalTokens, @cost, @latencyMs, @finishReason)'),
+  getUsageStats: db.prepare('SELECT * FROM usage_log WHERE created_at >= ? ORDER BY created_at DESC'),
+};
+
+// ========== HELPERS ==========
+function rowToModel(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    provider: row.provider,
+    family: row.family,
+    logo: row.logo,
+    color: row.color,
+    releaseDate: row.release_date,
+    description: row.description,
+    contextWindow: row.context_window,
+    outputLimit: row.output_limit,
+    architecture: row.architecture,
+    parameters: row.parameters,
+    inputPrice: row.input_price,
+    outputPrice: row.output_price,
+    speed: row.speed,
+    arenaElo: row.arena_elo,
+    benchmarks: safeJson(row.benchmarks, {}),
+    scores: safeJson(row.scores, {}),
+    features: safeJson(row.features, []),
+    bestFor: safeJson(row.best_for, []),
+    strengths: row.strengths,
+    weaknesses: row.weaknesses,
+    tags: safeJson(row.tags, []),
+    predecessor: row.predecessor,
+    likes: row.likes,
+    downloads: row.downloads,
+    pipeline: row.pipeline,
+    openRouterSlug: row.open_router_slug || '',
+    lastRefreshed: row.last_refreshed,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function modelToRow(m) {
+  return {
+    id: m.id,
+    name: m.name,
+    provider: m.provider || '',
+    family: m.family || '',
+    logo: m.logo || '',
+    color: m.color || '#6b7280',
+    releaseDate: m.releaseDate || '',
+    description: m.description || '',
+    contextWindow: m.contextWindow ?? null,
+    outputLimit: m.outputLimit ?? null,
+    architecture: m.architecture || 'Transformer',
+    parameters: m.parameters || null,
+    inputPrice: m.inputPrice ?? null,
+    outputPrice: m.outputPrice ?? null,
+    speed: m.speed ?? null,
+    arenaElo: m.arenaElo ?? null,
+    benchmarks: JSON.stringify(m.benchmarks || {}),
+    scores: JSON.stringify(m.scores || {}),
+    features: JSON.stringify(m.features || []),
+    bestFor: JSON.stringify(m.bestFor || []),
+    strengths: m.strengths || '',
+    weaknesses: m.weaknesses || '',
+    tags: JSON.stringify(m.tags || []),
+    predecessor: m.predecessor || null,
+    likes: m.likes || 0,
+    downloads: m.downloads || 0,
+    pipeline: m.pipeline || 'text-generation',
+    openRouterSlug: m.openRouterSlug || '',
+    lastRefreshed: m.lastRefreshed || null,
+    createdAt: m.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function safeJson(str, fallback) {
+  if (!str) return fallback;
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
+// ========== EXPORTS ==========
+module.exports = {
+  db,
+  migrateFromJson,
+  getAllModels() { return stmts.getAll.all().map(rowToModel); },
+  getModel(id) { return rowToModel(stmts.getById.get(id)); },
+  createModel(m) {
+    const row = modelToRow(m);
+    stmts.insert.run(row);
+    return rowToModel(stmts.getById.get(m.id));
+  },
+  updateModel(m) {
+    const row = modelToRow(m);
+    stmts.update.run(row);
+    return rowToModel(stmts.getById.get(m.id));
+  },
+  deleteModel(id) { stmts.delete.run(id); },
+  addChatEntry(role, content) {
+    stmts.upsertChat.run(role, content, new Date().toISOString());
+  },
+  getChatHistory() { return stmts.getChat.all(); },
+  // Settings
+  getSetting(key) {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+    return row ? row.value : null;
+  },
+  setSetting(key, value) {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+  },
+  getAllSettings() {
+    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const out = {};
+    for (const r of rows) out[r.key] = r.value;
+    return out;
+  },
+  // Auth
+  getApiKey(key) {
+    return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
+  },
+  createApiKey(name) {
+    const key = 'mc_' + crypto.randomBytes(24).toString('hex');
+    db.prepare('INSERT INTO api_keys (key, name) VALUES (?, ?)').run(key, name || 'default');
+    return key;
+  },
+  listApiKeys() {
+    return db.prepare('SELECT id, key, name, created_at, last_used FROM api_keys').all();
+  },
+  touchApiKey(key) {
+    db.prepare('UPDATE api_keys SET last_used = datetime(\'now\') WHERE key = ?').run(key);
+  },
+  // History
+  snapshotModel(m) {
+    const now = new Date().toISOString();
+    stmts.insertHistory.run(m.id, now, m.inputPrice, m.outputPrice, m.speed, m.arenaElo, JSON.stringify(m.benchmarks || {}), JSON.stringify(m.scores || {}), m._lastSource || 'manual');
+  },
+  getModelHistory(id) {
+    return stmts.getHistory.all(id).map(r => ({
+      id: r.id,
+      modelId: r.model_id,
+      snapshotAt: r.snapshot_at,
+      inputPrice: r.input_price,
+      outputPrice: r.output_price,
+      speed: r.speed,
+      arenaElo: r.arena_elo,
+      benchmarks: safeJson(r.benchmarks, {}),
+      scores: safeJson(r.scores, {}),
+      source: r.source,
+    }));
+  },
+  getLatestSnapshot(id) {
+    const r = stmts.getLatestSnapshot.get(id);
+    if (!r) return null;
+    return { inputPrice: r.input_price, outputPrice: r.output_price, speed: r.speed, arenaElo: r.arena_elo, benchmarks: safeJson(r.benchmarks, {}), snapshotAt: r.snapshot_at };
+  },
+  compareWithPrevious(model) {
+    const prev = this.getLatestSnapshot(model.id);
+    if (!prev) return null;
+    const changes = {};
+    for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
+      if (model[key] != null && prev[key] != null && model[key] !== prev[key]) {
+        changes[key] = { from: prev[key], to: model[key], diff: model[key] - prev[key] };
+      }
+    }
+    const benchKeys = [...new Set([...Object.keys(model.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
+    for (const k of benchKeys) {
+      const cur = model.benchmarks && model.benchmarks[k];
+      const old = prev.benchmarks && prev.benchmarks[k];
+      if (cur != null && old != null && cur !== old) {
+        changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
+      } else if (cur != null && old == null) {
+        changes['bench_' + k] = { from: null, to: cur, diff: null, label: 'new' };
+      }
+    }
+    return Object.keys(changes).length ? changes : null;
+  },
+  getAllChanges() {
+    const rows = stmts.getRecentChanges.all();
+    const result = [];
+    for (const row of rows) {
+      const m = { id: row.model_id, name: row.name, provider: row.provider, color: row.color };
+      // Get current model
+      const current = stmts.getById.get(row.model_id);
+      if (!current) continue;
+      const prev = { inputPrice: row.input_price, outputPrice: row.output_price, speed: row.speed, arenaElo: row.arena_elo, benchmarks: safeJson(row.benchmarks, {}), snapshotAt: row.snapshot_at, scores: safeJson(row.scores, {}) };
+      const changes = {};
+      for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
+        if (current[key] != null && prev[key] != null && Math.abs(current[key] - prev[key]) > 0.001) {
+          changes[key] = { from: prev[key], to: current[key], diff: current[key] - prev[key] };
+        }
+      }
+      const benchKeys = [...new Set([...Object.keys(current.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
+      for (const k of benchKeys) {
+        const cur = current.benchmarks && current.benchmarks[k];
+        const old = prev.benchmarks && prev.benchmarks[k];
+        if (cur != null && old != null && Math.abs(cur - old) > 0.01) {
+          changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
+        }
+      }
+      if (Object.keys(changes).length) {
+        result.push({ model: m, snapshotAt: row.snapshot_at, changes });
+      }
+    }
+    return result;
+  },
+  logUsage(entry) {
+    stmts.logUsage.run(entry);
+  },
+  getUsageStats(days) {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const rows = stmts.getUsageStats.all(since);
+    const total = { calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
+    const byModel = {};
+    const byDay = {};
+    for (const r of rows) {
+      total.calls++;
+      total.promptTokens += r.prompt_tokens;
+      total.completionTokens += r.completion_tokens;
+      total.totalTokens += r.total_tokens;
+      total.cost += r.cost;
+      total.latencyMs += r.latency_ms;
+      const mid = r.model_id;
+      if (!byModel[mid]) byModel[mid] = { modelId: mid, modelName: r.model_name, calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
+      byModel[mid].calls++;
+      byModel[mid].promptTokens += r.prompt_tokens;
+      byModel[mid].completionTokens += r.completion_tokens;
+      byModel[mid].totalTokens += r.total_tokens;
+      byModel[mid].cost += r.cost;
+      byModel[mid].latencyMs += r.latency_ms;
+      const day = r.created_at ? r.created_at.substring(0, 10) : 'unknown';
+      if (!byDay[day]) byDay[day] = { date: day, calls: 0, totalTokens: 0, cost: 0 };
+      byDay[day].calls++;
+      byDay[day].totalTokens += r.total_tokens;
+      byDay[day].cost += r.cost;
+    }
+    return { total, byModel: Object.values(byModel), byDay: Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date)) };
+  },
+};

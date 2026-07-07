@@ -1,0 +1,16 @@
+app = "modelcompare"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+[[mounts]]
+  source = "modelcompare_data"
+  destination = "/app/data"
