@@ -276,9 +276,19 @@ function safeJson(str, fallback) {
 }
 
 // ========== EXPORTS ==========
+function snapshotAllModels(source) {
+  const models = stmts.getAll.all().map(rowToModel);
+  const now = new Date().toISOString();
+  for (const m of models) {
+    stmts.insertHistory.run(m.id, now, m.inputPrice, m.outputPrice, m.speed, m.arenaElo, JSON.stringify(m.benchmarks || {}), JSON.stringify(m.scores || {}), source || 'manual');
+  }
+  return models.length;
+}
+
 module.exports = {
   db,
   migrateFromJson,
+  snapshotAllModels,
   getAllModels() { return stmts.getAll.all().map(rowToModel); },
   getModel(id) { return rowToModel(stmts.getById.get(id)); },
   createModel(m) {
