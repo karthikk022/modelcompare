@@ -14,6 +14,10 @@ export async function fetchModel(id: string): Promise<Model> {
   return data.model;
 }
 
+export interface CompareResult extends Model {
+  _comparison?: Record<string, { label: string; value: number }>;
+}
+
 export async function compareModels(ids: string[]): Promise<Model[]> {
   const res = await fetch(`${BASE}/compare?ids=${ids.join(',')}`);
   const data = await res.json();
@@ -28,4 +32,61 @@ export async function recommendForTask(task: string): Promise<Model[]> {
 
 export async function deleteModel(id: string): Promise<void> {
   await fetch(`${BASE}/models/${id}`, { method: 'DELETE' });
+}
+
+export async function getChanges(): Promise<{ modelId: string; modelName: string; field: string; oldValue: any; newValue: any; timestamp: string }[]> {
+  const res = await fetch(`${BASE}/changes`);
+  const data = await res.json();
+  return data.changes;
+}
+
+export interface DiscoveryResult {
+  models: (Model & { _source: string; likes?: number; downloads?: number; _alreadyAdded?: boolean })[];
+  source: string;
+  count: number;
+}
+
+export async function discoverModels(source: string = 'all', limit: number = 50): Promise<DiscoveryResult> {
+  const res = await fetch(`${BASE}/discover?source=${source}&limit=${limit}`);
+  return res.json();
+}
+
+export async function addModelFromDiscovery(m: Model & { _source?: string }): Promise<void> {
+  const { _source, likes, downloads, _alreadyAdded, ...rest } = m as any;
+  await fetch(`${BASE}/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rest),
+  });
+}
+
+export interface PromptResult {
+  results: {
+    id: string;
+    name: string;
+    slug?: string;
+    content: string | null;
+    finishReason: string | null;
+    latency: number;
+    inTokens: number;
+    outTokens: number;
+    cost: number | null;
+    error?: string;
+  }[];
+  prompt?: string;
+}
+
+export async function testPrompt(models: string[], prompt: string, systemPrompt?: string, maxTokens?: number, temperature?: number, webSearch?: boolean): Promise<PromptResult> {
+  const res = await fetch(`${BASE}/test-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ models, prompt, systemPrompt, maxTokens, temperature, webSearch }),
+  });
+  return res.json();
+}
+
+export async function getUsage(): Promise<{ id: number; modelId: string; modelName: string; totalTokens: number; cost: number; latencyMs: number; timestamp: string }[]> {
+  const res = await fetch(`${BASE}/analytics/usage`);
+  const data = await res.json();
+  return data.usage || [];
 }
