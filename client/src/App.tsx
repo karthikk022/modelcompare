@@ -5,6 +5,7 @@ import ModelsPage from './pages/ModelsPage'
 import ComparePage from './pages/ComparePage'
 import DiscoveryPage from './pages/DiscoveryPage'
 import PromptsPage from './pages/PromptsPage'
+import ChatPage from './pages/ChatPage'
 import './App.css'
 
 type Theme = 'dark' | 'light'
@@ -33,6 +34,7 @@ function App() {
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/discover" element={<DiscoveryPage />} />
             <Route path="/prompts" element={<PromptsPage />} />
+            <Route path="/chat" element={<ChatPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
