@@ -2,7 +2,7 @@ services:
   - type: web
     name: modelcompare
     runtime: node
-    repo: https://github.com/karthikchinnaiyan/modelcompare
+    repo: https://github.com/karthikk022/modelcompare
     plan: free
     region: oregon
     buildCommand: npm install
