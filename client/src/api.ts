@@ -8,12 +8,6 @@ export async function fetchModels(): Promise<Model[]> {
   return data.models;
 }
 
-export async function fetchModel(id: string): Promise<Model> {
-  const res = await fetch(`${BASE}/models/${id}`);
-  const data = await res.json();
-  return data.model;
-}
-
 export async function createModel(m: Partial<Model>): Promise<Model> {
   const res = await fetch(`${BASE}/models`, {
     method: 'POST',
@@ -37,7 +31,7 @@ export async function updateModel(id: string, m: Partial<Model>): Promise<Model>
 }
 
 export async function compareModels(ids: string[]): Promise<Model[]> {
-  const res = await fetch(`${BASE}/compare?ids=${ids.join(',')}`);
+  const res = await fetch(`${BASE}/compare?ids=${ids.map(encodeURIComponent).join(',')}`);
   const data = await res.json();
   return data.models;
 }
@@ -50,12 +44,6 @@ export async function recommendForTask(task: string): Promise<{ models: Model[] 
 export async function deleteModel(id: string): Promise<void> {
   const res = await fetch(`${BASE}/models/${id}`, { method: 'DELETE' });
   if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to delete'); }
-}
-
-export async function getChanges(): Promise<{ modelId: string; modelName: string; field: string; oldValue: any; newValue: any; timestamp: string }[]> {
-  const res = await fetch(`${BASE}/changes`);
-  const data = await res.json();
-  return data.changes;
 }
 
 export interface DiscoveryResult {
@@ -95,7 +83,7 @@ export async function testPrompt(models: string[], prompt: string, systemPrompt?
 }
 
 export async function getUsage(): Promise<{ id: number; modelId: string; modelName: string; totalTokens: number; cost: number; latencyMs: number; timestamp: string }[]> {
-  const res = await fetch(`${BASE}/analytics/usage`);
+  const res = await fetch(`${BASE}/usage/history`);
   const data = await res.json();
   return data.usage || [];
 }

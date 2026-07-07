@@ -10,9 +10,18 @@ function register(app) {
   });
 
   app.get('/api/usage/history', async (req, res) => {
-    const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 365);
-    const stats = await db.getUsageStats(days);
-    res.json({ entries: stats.byModel });
+    const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 365);
+    const rows = await db.getUsageStats(days);
+    const entries = (Array.isArray(rows) ? rows : []).map(r => ({
+      id: r.id,
+      modelId: r.model_id,
+      modelName: r.model_name,
+      totalTokens: r.total_tokens,
+      cost: r.cost,
+      latencyMs: r.latency_ms,
+      timestamp: r.created_at,
+    }));
+    res.json({ usage: entries });
   });
 
   app.post('/api/web-search', async (req, res) => {

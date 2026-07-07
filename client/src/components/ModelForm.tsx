@@ -66,9 +66,9 @@ export default function ModelForm({ model, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="modal-overlay show" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-overlay show" onClick={e => { if (e.target === e.currentTarget) onClose() }} role="dialog" aria-modal="true" aria-label={isEdit ? 'Edit model' : 'Add model'}>
       <div className="modal">
-        <button className="modal-close" onClick={onClose}>&times;</button>
+        <button className="modal-close" onClick={onClose} aria-label="Close">&times;</button>
         <h2>{isEdit ? 'Edit Model' : 'Add New Model'}</h2>
         {err && <div className="toast" style={{ background: 'var(--red)' }}>{err}</div>}
         <form onSubmit={handleSubmit} className="model-form">

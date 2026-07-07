@@ -1,7 +1,6 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
 
 const DB_PATH = path.join(__dirname, 'data', 'models.db');
 const DATA_DIR = path.join(__dirname, 'data');
@@ -57,14 +56,6 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS api_keys (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT UNIQUE NOT NULL,
-    name TEXT DEFAULT 'default',
-    created_at TEXT DEFAULT (datetime('now')),
-    last_used TEXT
   );
 
   CREATE TABLE IF NOT EXISTS model_history (
@@ -319,20 +310,6 @@ api.getAllSettings = async () => {
   const out = {};
   for (const r of rows) out[r.key] = r.value;
   return out;
-};
-api.getApiKey = async (key) => db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
-api.createApiKey = async (name) => {
-  const key = 'mc_' + crypto.randomBytes(24).toString('hex');
-  db.prepare('INSERT INTO api_keys (key, name) VALUES (?, ?)').run(key, name || 'default');
-  return key;
-};
-api.listApiKeys = async () => db.prepare('SELECT id, key, name, created_at, last_used FROM api_keys').all();
-api.touchApiKey = async (key) => {
-  db.prepare('UPDATE api_keys SET last_used = datetime(\'now\') WHERE key = ?').run(key);
-};
-api.snapshotModel = async (m) => {
-  const now = new Date().toISOString();
-  stmts.insertHistory.run(m.id, now, m.inputPrice, m.outputPrice, m.speed, m.arenaElo, JSON.stringify(m.benchmarks || {}), JSON.stringify(m.scores || {}), m._lastSource || 'manual');
 };
 api.getModelHistory = async (id) => stmts.getHistory.all(id).map(r => ({
   id: r.id,

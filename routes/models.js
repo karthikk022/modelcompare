@@ -38,7 +38,7 @@ function register(app) {
       const allBenchKeys = [...new Set(models.flatMap(m => Object.keys(m.benchmarks || {})))].sort();
       const allScoreKeys = [...new Set(models.flatMap(m => Object.keys(m.scores || {})))].sort();
       const cols = ['id','name','provider','family','architecture','parameters','inputPrice','outputPrice','speed','arenaElo','contextWindow','releaseDate', ...allBenchKeys.map(k => 'bench_' + k.replace(/[^a-z0-9]/gi,'_')), ...allScoreKeys.map(k => 'score_' + k), 'tags'];
-      const esc = v => { if(v == null) return ''; const s = String(v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const esc = v => { if(v == null) return ''; const s = String(v).replace(/^[=+\-@]/, "'$&"); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
       const rows = models.map(m => cols.map(c => {
         if (c === 'tags') return esc((m.tags||[]).join('; '));
         if (c.startsWith('bench_')) { const k = c.slice(6).replace(/_/g, ' '); return esc(m.benchmarks ? m.benchmarks[k] : ''); }

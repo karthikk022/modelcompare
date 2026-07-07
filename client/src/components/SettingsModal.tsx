@@ -35,16 +35,16 @@ export default function SettingsModal({ onClose }: Props) {
   }
 
   return (
-    <div className="modal-overlay show" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-overlay show" onClick={e => { if (e.target === e.currentTarget) onClose() }} role="dialog" aria-modal="true" aria-label="Settings">
       <div className="modal" style={{ maxWidth: 440 }}>
-        <button className="modal-close" onClick={onClose}>&times;</button>
+        <button className="modal-close" onClick={onClose} aria-label="Close settings">&times;</button>
         <h2>Settings</h2>
         {loading ? <div className="loading">Loading...</div> : (
           <>
             <div className="form-group">
               <label>OpenRouter API Key</label>
               <input
-                type="text"
+                type="password"
                 value={key}
                 onChange={e => setKey(e.target.value)}
                 placeholder="sk-or-v1-..."

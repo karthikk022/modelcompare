@@ -184,7 +184,7 @@ function register(app) {
     }
 
     const modelId = modelIds[0];
-    const model = db.getModel(modelId);
+    const model = await db.getModel(modelId);
     if (!model) return res.status(404).json({ error: 'Model not found' });
 
     let slug = model.openRouterSlug;

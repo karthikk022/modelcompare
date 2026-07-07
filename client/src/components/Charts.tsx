@@ -51,7 +51,7 @@ export function BenchmarkChart({ models }: Props) {
   }, [models])
 
   if (models.length === 0) return null
-  return <div className="chart-container"><h3>Benchmark Scores (%)</h3><div className="chart-wrapper"><canvas ref={canvasRef} /></div></div>
+  return <div className="chart-container"><h3>Benchmark Scores (%)</h3><div className="chart-wrapper"><canvas ref={canvasRef} role="img" aria-label="Benchmark scores bar chart" /></div></div>
 }
 
 export function RadarChart({ models }: Props) {
@@ -100,7 +100,7 @@ export function RadarChart({ models }: Props) {
   }, [models])
 
   if (models.length === 0) return null
-  return <div className="chart-container"><h3>Capability Radar</h3><div className="chart-wrapper"><canvas ref={canvasRef} /></div></div>
+  return <div className="chart-container"><h3>Capability Radar</h3><div className="chart-wrapper"><canvas ref={canvasRef} role="img" aria-label="Capability radar chart" /></div></div>
 }
 
 export function PricingChart({ models }: Props) {
@@ -153,7 +153,7 @@ export function PricingChart({ models }: Props) {
   }, [models])
 
   if (models.length === 0) return null
-  return <div className="chart-container"><h3>Pricing ($/M tokens)</h3><div className="chart-wrapper"><canvas ref={canvasRef} /></div></div>
+  return <div className="chart-container"><h3>Pricing ($/M tokens)</h3><div className="chart-wrapper"><canvas ref={canvasRef} role="img" aria-label="Pricing bar chart" /></div></div>
 }
 
 export function UsageChart({ usage }: { usage: { timestamp: string; totalTokens: number; cost: number }[] }) {
@@ -193,5 +193,5 @@ export function UsageChart({ usage }: { usage: { timestamp: string; totalTokens:
   }, [usage.length])
 
   if (usage.length === 0) return null
-  return <div className="chart-container"><h3>Usage History</h3><div className="chart-wrapper" style={{ height: 250 }}><canvas ref={canvasRef} /></div></div>
+  return <div className="chart-container"><h3>Usage History</h3><div className="chart-wrapper" style={{ height: 250 }}><canvas ref={canvasRef} role="img" aria-label="Usage history line chart" /></div></div>
 }

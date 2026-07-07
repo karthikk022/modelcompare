@@ -16,6 +16,10 @@ function formatContext(ctx: number | null): string {
   return String(ctx)
 }
 
+function handleKeyDown(e: React.KeyboardEvent, fn: () => void) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn() }
+}
+
 export default function ModelCard({ model, isSelected, onSelect, onToggleCompare, onEdit, onDelete }: Props) {
   const topBenchmarks = [['MMLU-Pro', 'MMLU'], ['GPQA Diamond', 'GPQA'], ['SWE-bench Verified', 'SWE']]
     .map(([k, label]) => {
@@ -25,13 +29,29 @@ export default function ModelCard({ model, isSelected, onSelect, onToggleCompare
     .filter(Boolean) as { label: string; value: number }[]
 
   return (
-    <div className={`model-card${isSelected ? ' selected' : ''}`} onClick={onSelect}>
+    <div
+      className={`model-card${isSelected ? ' selected' : ''}`}
+      onClick={onSelect}
+      onKeyDown={e => handleKeyDown(e, onSelect)}
+      role="button"
+      tabIndex={0}
+      aria-pressed={isSelected}
+      aria-label={`${model.name} by ${model.provider}`}
+    >
       <div className="card-head">
         <div className="card-logo" style={{ background: model.color || '#6b7280' }}>
           {model.logo || model.name.charAt(0)}
         </div>
         <div className="card-actions">
-          <div className="card-check" onClick={e => { e.stopPropagation(); onToggleCompare() }}>
+          <div
+            className="card-check"
+            onClick={e => { e.stopPropagation(); onToggleCompare() }}
+            onKeyDown={e => handleKeyDown(e, onToggleCompare)}
+            role="checkbox"
+            aria-checked={isSelected}
+            tabIndex={0}
+            aria-label={`Compare ${model.name}`}
+          >
             {isSelected ? '\u2713' : ''}
           </div>
         </div>

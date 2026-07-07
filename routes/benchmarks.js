@@ -92,17 +92,14 @@ function register(app) {
     const models = await db.getAllModels();
     let updated = 0;
     for (const m of models) {
-      if (m.benchmarks && Object.keys(m.benchmarks).length) {
-        for (const key of Object.keys(m.benchmarks)) {
-          const drift = (m.arenaElo || 1000) / 10000;
-          m.benchmarks[key] = Math.min(100, Math.max(0, Math.round((m.benchmarks[key] + drift) * 10) / 10));
-        }
+      const entry = matchCuratedBenchmarks(m);
+      if (entry && mergeBenchmarksIntoModel(m, entry)) {
+        m.lastRefreshed = new Date().toISOString();
+        await db.updateModel(m);
         updated++;
       }
-      m.lastRefreshed = new Date().toISOString();
-      await db.updateModel(m);
     }
-    res.json({ message: 'Refreshed benchmark data for ' + updated + ' models', refreshed: updated });
+    res.json({ message: 'Synced benchmark data from curated set for ' + updated + ' models', refreshed: updated });
   });
 
   app.get('/api/benchmarks/sync', async (req, res) => {
