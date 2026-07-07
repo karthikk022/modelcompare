@@ -56,9 +56,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+const reactDist = path.join(__dirname, 'client', 'dist', 'index.html');
+const hasReact = require('fs').existsSync(reactDist);
 const modelsPage = path.join(__dirname, 'public', 'models.html');
-app.get('/', (req, res) => res.sendFile(modelsPage));
-app.get('/models', (req, res) => res.sendFile(modelsPage));
+if (hasReact) {
+  app.get('/', (req, res) => res.sendFile(reactDist));
+  app.get('/models', (req, res) => res.sendFile(reactDist));
+} else {
+  app.get('/', (req, res) => res.sendFile(modelsPage));
+  app.get('/models', (req, res) => res.sendFile(modelsPage));
+}
 
 process.on('SIGTERM', () => { console.log('Shutting down...'); process.exit(0); });
 process.on('SIGINT', () => { console.log('Shutting down...'); process.exit(0); });
