@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Model } from '../types'
 import { fetchModels, testPrompt, getUsage } from '../api'
+import { UsageChart } from '../components/Charts'
 
 export default function PromptsPage() {
   const [models, setModels] = useState<Model[]>([])
@@ -31,9 +32,7 @@ export default function PromptsPage() {
   }
 
   function toggleModel(id: string) {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   return (
@@ -79,7 +78,7 @@ export default function PromptsPage() {
             </div>
             <label className="checkbox-label">
               <input type="checkbox" checked={webSearch} onChange={e => setWebSearch(e.target.checked)} />
-              Web Search (injects context)
+              Web Search
             </label>
             <button className="btn" onClick={doTest} disabled={loading || selectedIds.length === 0 || !prompt.trim()}>
               {loading ? 'Testing...' : 'Run Test'}
@@ -102,7 +101,7 @@ export default function PromptsPage() {
                 {r.error ? (
                   <div className="result-error">{r.error}</div>
                 ) : r.content ? (
-                  <pre className="result-content">{r.content.slice(0, 2000)}</pre>
+                  <pre className="result-content">{r.content.slice(0, 5000)}</pre>
                 ) : (
                   <div className="text-dim">No output</div>
                 )}
@@ -115,7 +114,8 @@ export default function PromptsPage() {
       {tab === 'history' && (
         <div className="usage-page">
           <h2>Usage History</h2>
-          {usage.length === 0 ? <div className="text-dim">No usage recorded yet.</div> : (
+          <UsageChart usage={usage} />
+          {usage.length === 0 ? <div className="text-dim" style={{ marginTop: 16 }}>No usage recorded yet.</div> : (
             <table className="usage-table">
               <thead>
                 <tr>

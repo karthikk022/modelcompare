@@ -3,9 +3,11 @@ import type { Model } from '../types'
 interface Props {
   model: Model
   onClose: () => void
+  onEdit?: () => void
+  onDelete?: () => void
 }
 
-export default function ModelDetail({ model, onClose }: Props) {
+export default function ModelDetail({ model, onClose, onEdit, onDelete }: Props) {
   const benchEntries = Object.entries(model.benchmarks || {})
   const topFeatures = (model.features || []).slice(0, 8)
   const bestFor = (model.bestFor || []).slice(0, 6)
@@ -21,6 +23,12 @@ export default function ModelDetail({ model, onClose }: Props) {
           <h2>{model.name}</h2>
           <p className="provider">{model.provider} &middot; {model.family || 'Unknown family'}</p>
         </div>
+        {(onEdit || onDelete) && (
+          <div className="detail-actions" style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {onEdit && <button className="btn-sm" onClick={onEdit}>Edit</button>}
+            {onDelete && <button className="btn-sm" style={{ background: 'var(--red)' }} onClick={onDelete}>Del</button>}
+          </div>
+        )}
       </div>
 
       {model.description && <p className="detail-desc">{model.description}</p>}

@@ -14,8 +14,26 @@ export async function fetchModel(id: string): Promise<Model> {
   return data.model;
 }
 
-export interface CompareResult extends Model {
-  _comparison?: Record<string, { label: string; value: number }>;
+export async function createModel(m: Partial<Model>): Promise<Model> {
+  const res = await fetch(`${BASE}/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(m),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to create model'); }
+  const data = await res.json();
+  return data.model;
+}
+
+export async function updateModel(id: string, m: Partial<Model>): Promise<Model> {
+  const res = await fetch(`${BASE}/models/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(m),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to update model'); }
+  const data = await res.json();
+  return data.model;
 }
 
 export async function compareModels(ids: string[]): Promise<Model[]> {
@@ -24,14 +42,14 @@ export async function compareModels(ids: string[]): Promise<Model[]> {
   return data.models;
 }
 
-export async function recommendForTask(task: string): Promise<Model[]> {
+export async function recommendForTask(task: string): Promise<{ models: Model[] }> {
   const res = await fetch(`${BASE}/recommend?task=${encodeURIComponent(task)}`);
-  const data = await res.json();
-  return data.models;
+  return res.json();
 }
 
 export async function deleteModel(id: string): Promise<void> {
-  await fetch(`${BASE}/models/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}/models/${id}`, { method: 'DELETE' });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to delete'); }
 }
 
 export async function getChanges(): Promise<{ modelId: string; modelName: string; field: string; oldValue: any; newValue: any; timestamp: string }[]> {
@@ -54,32 +72,23 @@ export async function discoverModels(source: string = 'all', limit: number = 50)
 export async function addModelFromDiscovery(m: Model & { _source?: string }): Promise<void> {
   const { _source, likes, downloads, _alreadyAdded, ...rest } = m as any;
   await fetch(`${BASE}/models`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rest),
   });
 }
 
 export interface PromptResult {
   results: {
-    id: string;
-    name: string;
-    slug?: string;
-    content: string | null;
-    finishReason: string | null;
-    latency: number;
-    inTokens: number;
-    outTokens: number;
-    cost: number | null;
-    error?: string;
+    id: string; name: string; slug?: string; content: string | null;
+    finishReason: string | null; latency: number; inTokens: number;
+    outTokens: number; cost: number | null; error?: string;
   }[];
   prompt?: string;
 }
 
 export async function testPrompt(models: string[], prompt: string, systemPrompt?: string, maxTokens?: number, temperature?: number, webSearch?: boolean): Promise<PromptResult> {
   const res = await fetch(`${BASE}/test-prompt`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ models, prompt, systemPrompt, maxTokens, temperature, webSearch }),
   });
   return res.json();
@@ -89,4 +98,21 @@ export async function getUsage(): Promise<{ id: number; modelId: string; modelNa
   const res = await fetch(`${BASE}/analytics/usage`);
   const data = await res.json();
   return data.usage || [];
+}
+
+export async function getSettings(): Promise<Record<string, string>> {
+  const res = await fetch(`${BASE}/settings`);
+  return res.json();
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  await fetch(`${BASE}/settings/${key}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function exportModels(format: 'json' | 'csv'): Promise<string> {
+  const res = await fetch(`${BASE}/models/export?format=${format}`);
+  return res.text();
 }

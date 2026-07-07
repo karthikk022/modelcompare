@@ -26,6 +26,7 @@ require('./routes/models').register(app);
 require('./routes/prompts').register(app);
 require('./routes/analytics').register(app);
 require('./routes/discovery').register(app);
+require('./routes/settings').register(app);
 require('./routes/benchmarks').register(app);
 
 app.get('/api/health', async (req, res) => {
@@ -56,13 +57,14 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const reactDist = path.join(__dirname, 'client', 'dist', 'index.html');
-const hasReact = require('fs').existsSync(reactDist);
-const modelsPage = path.join(__dirname, 'public', 'models.html');
+const reactDistDir = path.join(__dirname, 'client', 'dist');
+const reactIndex = path.join(reactDistDir, 'index.html');
+const hasReact = require('fs').existsSync(reactIndex);
 if (hasReact) {
-  app.get('/', (req, res) => res.sendFile(reactDist));
-  app.get('/models', (req, res) => res.sendFile(reactDist));
+  app.use(express.static(reactDistDir));
+  app.get(/^\/(?!api\/)/, (req, res) => res.sendFile(reactIndex));
 } else {
+  const modelsPage = path.join(__dirname, 'public', 'models.html');
   app.get('/', (req, res) => res.sendFile(modelsPage));
   app.get('/models', (req, res) => res.sendFile(modelsPage));
 }

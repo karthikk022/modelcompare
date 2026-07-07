@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { Model } from '../types'
 import { compareModels } from '../api'
+import { BenchmarkChart, RadarChart, PricingChart } from '../components/Charts'
 
 const COMPARE_FIELDS = [
   { key: 'parameters', label: 'Parameters' },
@@ -29,6 +30,7 @@ export default function ComparePage() {
   const [searchParams] = useSearchParams()
   const [models, setModels] = useState<Model[]>([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<'benchmarks' | 'radar' | 'pricing' | 'specs'>('benchmarks')
   const ids = (searchParams.get('ids') || '').split(',').filter(Boolean)
 
   useEffect(() => {
@@ -47,50 +49,58 @@ export default function ComparePage() {
   return (
     <div className="compare-page">
       <h2>Compare Models</h2>
-      <div className="compare-table-wrap">
-        <table className="compare-table">
-          <thead>
-            <tr>
-              <th>Property</th>
-              {models.map(m => <th key={m.id}>{m.name}<br /><span className="provider">{m.provider}</span></th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {COMPARE_FIELDS.map(({ key, label }) => (
-              <tr key={key}>
-                <td className="prop-label">{label}</td>
-                {models.map(m => <td key={m.id}>{val(m, key)}</td>)}
-              </tr>
-            ))}
-            {benchKeys.length > 0 && (
-              <tr className="section-row"><td colSpan={models.length + 1}>Benchmarks</td></tr>
-            )}
-            {benchKeys.map(bk => (
-              <tr key={bk}>
-                <td className="prop-label">{bk}</td>
-                {models.map(m => {
-                  const entry = Object.entries(m.benchmarks || {}).find(([k]) => k.toLowerCase().includes(bk.toLowerCase()))
-                  const v = entry ? entry[1] : null
-                  return <td key={m.id}>{v != null ? `${v}%` : '-'}</td>
-                })}
-              </tr>
-            ))}
-            <tr className="section-row"><td colSpan={models.length + 1}>Scores</td></tr>
-            {models.length > 0 && Object.keys(models[0].scores || {}).map(sk => (
-              <tr key={sk}>
-                <td className="prop-label">{sk}</td>
-                {models.map(m => <td key={m.id}>{(m.scores as any)?.[sk] ?? '-'}</td>)}
-              </tr>
-            ))}
-            {models.some(m => m.tags?.length) && (
-              <tr>
-                <td className="prop-label">Tags</td>
-                {models.map(m => <td key={m.id}>{(m.tags || []).join(', ') || '-'}</td>)}
-              </tr>
-            )}
-          </tbody>
-        </table>
+
+      <div className="tabs">
+        {(['specs', 'benchmarks', 'radar', 'pricing'] as const).map(t => (
+          <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
       </div>
+
+      {tab === 'specs' && (
+        <div className="compare-table-wrap">
+          <table className="compare-table">
+            <thead>
+              <tr>
+                <th>Property</th>
+                {models.map(m => <th key={m.id}>{m.name}<br /><span className="provider">{m.provider}</span></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE_FIELDS.map(({ key, label }) => (
+                <tr key={key}>
+                  <td className="prop-label">{label}</td>
+                  {models.map(m => <td key={m.id}>{val(m, key)}</td>)}
+                </tr>
+              ))}
+              {benchKeys.length > 0 && (
+                <tr className="section-row"><td colSpan={models.length + 1}>Benchmarks</td></tr>
+              )}
+              {benchKeys.map(bk => (
+                <tr key={bk}>
+                  <td className="prop-label">{bk}</td>
+                  {models.map(m => {
+                    const entry = Object.entries(m.benchmarks || {}).find(([k]) => k.toLowerCase().includes(bk.toLowerCase()))
+                    const v = entry ? entry[1] : null
+                    return <td key={m.id}>{v != null ? `${v}%` : '-'}</td>
+                  })}
+                </tr>
+              ))}
+              {models.some(m => m.tags?.length) && (
+                <tr>
+                  <td className="prop-label">Tags</td>
+                  {models.map(m => <td key={m.id}>{(m.tags || []).join(', ') || '-'}</td>)}
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'benchmarks' && <BenchmarkChart models={models} />}
+      {tab === 'radar' && <RadarChart models={models} />}
+      {tab === 'pricing' && <PricingChart models={models} />}
     </div>
   )
 }
