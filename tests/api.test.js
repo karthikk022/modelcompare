@@ -15,17 +15,18 @@ require('../routes/models').register(app);
 require('../routes/analytics').register(app);
 require('../routes/benchmarks').register(app);
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', models: db.getAllModels().length, db: 'sqlite', version: '1.0.0' });
+app.get('/api/health', async (req, res) => {
+  const models = await db.getAllModels();
+  res.json({ status: 'ok', models: models.length, db: 'sqlite', version: '1.0.0' });
 });
 
 describe('API Routes', function () {
-  before(function () {
-    db.migrateFromJson();
+  before(async function () {
+    await db.migrateFromJson();
   });
 
-  after(function () {
-    try { db.deleteModel('test-api-model'); } catch (e) { /* skip */ }
+  after(async function () {
+    try { await db.deleteModel('test-api-model'); } catch (e) { /* skip */ }
   });
 
   describe('GET /api/health', function () {

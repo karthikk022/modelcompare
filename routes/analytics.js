@@ -3,15 +3,15 @@ const { webSearch } = require('./utils');
 
 function register(app) {
 
-  app.get('/api/usage/stats', (req, res) => {
+  app.get('/api/usage/stats', async (req, res) => {
     const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 365);
-    const stats = db.getUsageStats(days);
+    const stats = await db.getUsageStats(days);
     res.json(stats);
   });
 
-  app.get('/api/usage/history', (req, res) => {
+  app.get('/api/usage/history', async (req, res) => {
     const days = Math.min(Math.max(parseInt(req.query.days) || 7, 1), 365);
-    const stats = db.getUsageStats(days);
+    const stats = await db.getUsageStats(days);
     res.json({ entries: stats.byModel });
   });
 

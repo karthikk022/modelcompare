@@ -253,7 +253,8 @@ function register(app) {
       }
       const seen = new Set();
       models = models.filter(m => { const k = m.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-      const existing = new Set(db.getAllModels().map(m => m.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+      const allModels = await db.getAllModels();
+      const existing = new Set(allModels.map(m => m.name.toLowerCase().replace(/[^a-z0-9]/g, '')));
       models = models.map(m => ({ ...m, _alreadyAdded: existing.has(m.name.toLowerCase().replace(/[^a-z0-9]/g, '')) }));
       res.json({ models, source, count: models.length });
     } catch (e) {
@@ -265,7 +266,7 @@ function register(app) {
     const force = req.query.force === 'true';
     try {
       const data = await fetchLivePricing(force);
-      if (data.fetchedAt) db.snapshotAllModels('pricing-refresh');
+      if (data.fetchedAt) await db.snapshotAllModels('pricing-refresh');
       res.json(data);
     } catch (e) {
       res.status(500).json({ error: 'Live pricing failed: ' + e.message });

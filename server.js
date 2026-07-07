@@ -8,8 +8,6 @@ const db = require('./db');
 
 const PORT = process.env.PORT || 3001;
 
-db.migrateFromJson();
-
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(cors());
 app.use(express.static('public'));
@@ -30,11 +28,12 @@ require('./routes/analytics').register(app);
 require('./routes/discovery').register(app);
 require('./routes/benchmarks').register(app);
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const models = await db.getAllModels();
   res.json({
     status: 'ok',
     uptime: Math.floor((process.uptime ? process.uptime() : 0)),
-    models: db.getAllModels().length,
+    models: models.length,
     apiKeys: 0,
     db: 'sqlite',
     version: '1.0.0',
@@ -66,32 +65,37 @@ process.on('SIGINT', () => { console.log('Shutting down...'); process.exit(0); }
 process.on('uncaughtException', (err) => { console.error('[FATAL]', err); process.exit(1); });
 process.on('unhandledRejection', (reason) => { console.error('[FATAL] Unhandled rejection:', reason); });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('AI Model Compare running on http://localhost:' + PORT);
-  console.log('Press Ctrl+C to stop');
+async function start() {
+  await db.migrateFromJson();
+  app.listen(PORT, '0.0.0.0', async () => {
+    console.log('AI Model Compare running on http://localhost:' + PORT);
+    console.log('Press Ctrl+C to stop');
 
-  const startCount = db.snapshotAllModels('startup');
-  console.log('Initial snapshot: ' + startCount + ' models');
+    const startCount = await db.snapshotAllModels('startup');
+    console.log('Initial snapshot: ' + startCount + ' models');
 
-  setInterval(() => {
-    const c = db.snapshotAllModels('scheduled');
-    console.log('[' + new Date().toISOString() + '] Scheduled snapshot: ' + c + ' models');
-  }, 6 * 60 * 60 * 1000);
+    setInterval(async () => {
+      const c = await db.snapshotAllModels('scheduled');
+      console.log('[' + new Date().toISOString() + '] Scheduled snapshot: ' + c + ' models');
+    }, 6 * 60 * 60 * 1000);
 
-  setInterval(() => {
-    const changes = db.getAllChanges();
-    if (changes.length) {
-      const sig = changes.filter(c => {
-        return Object.entries(c.changes).some(([k, v]) => {
-          if (k.startsWith('bench_') && Math.abs(v.diff) > 2) return true;
-          if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(v.diff) > 0.5;
-          return false;
+    setInterval(async () => {
+      const changes = await db.getAllChanges();
+      if (changes.length) {
+        const sig = changes.filter(c => {
+          return Object.entries(c.changes).some(([k, v]) => {
+            if (k.startsWith('bench_') && Math.abs(v.diff) > 2) return true;
+            if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(v.diff) > 0.5;
+            return false;
+          });
         });
-      });
-      if (sig.length) {
-        console.log('[ALERT] ' + sig.length + ' models with significant changes:');
-        sig.forEach(c => console.log('  ' + c.model.name + ': ' + Object.keys(c.changes).length + ' changes'));
+        if (sig.length) {
+          console.log('[ALERT] ' + sig.length + ' models with significant changes:');
+          sig.forEach(c => console.log('  ' + c.model.name + ': ' + Object.keys(c.changes).length + ' changes'));
+        }
       }
-    }
-  }, 30 * 60 * 1000);
-});
+    }, 30 * 60 * 1000);
+  });
+}
+
+start();

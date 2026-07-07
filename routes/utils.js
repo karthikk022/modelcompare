@@ -6,10 +6,10 @@ let _livePricingCache = null;
 let _livePricingTime = null;
 const _LIVE_TTL = 5 * 60 * 1000;
 
-function getOpenRouterApiKey(req) {
+async function getOpenRouterApiKey(req) {
   const clientKey = req && (req.headers['x-openrouter-key'] || (req.body && req.body.openRouterKey));
   if (clientKey) return clientKey;
-  return db.getSetting('openrouter_api_key') || process.env.OPENROUTER_API_KEY || '';
+  return (await db.getSetting('openrouter_api_key')) || process.env.OPENROUTER_API_KEY || '';
 }
 
 async function webSearch(query) {
@@ -57,7 +57,7 @@ async function fetchLivePricing(force) {
     if (!res.ok) throw new Error('OR ' + res.status);
     const body = await res.json();
     const orModels = body.data || [];
-    const ourModels = db.getAllModels();
+    const ourModels = await db.getAllModels();
     const result = { fetchedAt: new Date().toISOString(), source: 'openrouter', models: {} };
     for (const m of ourModels) {
       const match = findModelMatch(m.name, orModels);

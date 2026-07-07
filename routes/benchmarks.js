@@ -88,10 +88,10 @@ function mergeBenchmarksIntoModel(model, entry) {
 
 function register(app) {
 
-  app.get('/api/refresh', (req, res) => {
-    const models = db.getAllModels();
+  app.get('/api/refresh', async (req, res) => {
+    const models = await db.getAllModels();
     let updated = 0;
-    models.forEach(m => {
+    for (const m of models) {
       if (m.benchmarks && Object.keys(m.benchmarks).length) {
         for (const key of Object.keys(m.benchmarks)) {
           const drift = (m.arenaElo || 1000) / 10000;
@@ -100,13 +100,13 @@ function register(app) {
         updated++;
       }
       m.lastRefreshed = new Date().toISOString();
-      db.updateModel(m);
-    });
+      await db.updateModel(m);
+    }
     res.json({ message: 'Refreshed benchmark data for ' + updated + ' models', refreshed: updated });
   });
 
   app.get('/api/benchmarks/sync', async (req, res) => {
-    const models = db.getAllModels();
+    let models = await db.getAllModels();
     let checked = 0, updated = 0;
     const results = [];
 
@@ -116,7 +116,7 @@ function register(app) {
         checked++;
         if (mergeBenchmarksIntoModel(m, entry)) {
           m.lastRefreshed = new Date().toISOString();
-          db.updateModel(m);
+          await db.updateModel(m);
           updated++;
           results.push({ id: m.id, name: m.name, source: 'curated', benchmarks: Object.keys(m.benchmarks || {}).length });
         }
@@ -171,14 +171,14 @@ function register(app) {
 
         if (changed) {
           m.lastRefreshed = new Date().toISOString();
-          db.updateModel(m);
+          await db.updateModel(m);
           updated++;
           results.push({ id: m.id, name: m.name, benchmarks: Object.keys(m.benchmarks).length });
         }
       } catch (e) { /* skip */ }
     }
 
-    if (updated > 0) db.snapshotAllModels('benchmark-sync');
+    if (updated > 0) await db.snapshotAllModels('benchmark-sync');
 
     res.json({ message: 'Checked ' + checked + ' models, updated ' + updated, checked, updated, results });
   });

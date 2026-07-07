@@ -19,14 +19,20 @@ function validateModel(body, isUpdate) {
   return null;
 }
 
+function handle(handler) {
+  return async (req, res, next) => {
+    try { await handler(req, res, next); } catch (e) { next(e); }
+  };
+}
+
 function register(app) {
 
-  app.get('/api/models', (req, res) => {
-    res.json({ models: db.getAllModels() });
-  });
+  app.get('/api/models', handle(async (req, res) => {
+    res.json({ models: await db.getAllModels() });
+  }));
 
-  app.get('/api/models/export', (req, res) => {
-    const models = db.getAllModels();
+  app.get('/api/models/export', handle(async (req, res) => {
+    const models = await db.getAllModels();
     const format = req.query.format || 'json';
     if (format === 'csv') {
       const allBenchKeys = [...new Set(models.flatMap(m => Object.keys(m.benchmarks || {})))].sort();
@@ -47,19 +53,19 @@ function register(app) {
       res.setHeader('Content-Disposition', 'attachment; filename="models-export.json"');
       res.json(models);
     }
-  });
+  }));
 
-  app.get('/api/models/:id', (req, res) => {
-    const model = db.getModel(req.params.id);
+  app.get('/api/models/:id', handle(async (req, res) => {
+    const model = await db.getModel(req.params.id);
     if (!model) return res.status(404).json({ error: 'Model not found' });
     res.json({ model });
-  });
+  }));
 
-  app.post('/api/models', (req, res) => {
+  app.post('/api/models', handle(async (req, res) => {
     const err = validateModel(req.body, false);
     if (err) return res.status(400).json({ error: err });
     const model = req.body;
-    if (db.getModel(model.id)) {
+    if (await db.getModel(model.id)) {
       return res.status(409).json({ error: 'Model ID already exists' });
     }
     model.color = model.color || '#6b7280';
@@ -82,64 +88,64 @@ function register(app) {
     model.weaknesses = model.weaknesses || 'Limited data available. Import benchmark results and test against your use cases.';
     model.tags = model.tags || ['other'];
     model.createdAt = new Date().toISOString();
-    const created = db.createModel(model);
+    const created = await db.createModel(model);
     res.status(201).json({ model: created });
-  });
+  }));
 
-  app.patch('/api/models/:id/slug', (req, res) => {
-    const model = db.getModel(req.params.id);
+  app.patch('/api/models/:id/slug', handle(async (req, res) => {
+    const model = await db.getModel(req.params.id);
     if (!model) return res.status(404).json({ error: 'Model not found' });
     const slug = req.body.slug;
     if (!slug || typeof slug !== 'string') return res.status(400).json({ error: 'Slug is required' });
     model.openRouterSlug = slug;
-    db.updateModel(model);
+    await db.updateModel(model);
     res.json({ model });
-  });
+  }));
 
-  app.put('/api/models/:id', (req, res) => {
-    const existing = db.getModel(req.params.id);
+  app.put('/api/models/:id', handle(async (req, res) => {
+    const existing = await db.getModel(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Model not found' });
     const err = validateModel(req.body, true);
     if (err) return res.status(400).json({ error: err });
-    const updated = db.updateModel({ ...existing, ...req.body, id: req.params.id });
+    const updated = await db.updateModel({ ...existing, ...req.body, id: req.params.id });
     res.json({ model: updated });
-  });
+  }));
 
-  app.delete('/api/models/:id', (req, res) => {
-    const existing = db.getModel(req.params.id);
+  app.delete('/api/models/:id', handle(async (req, res) => {
+    const existing = await db.getModel(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Model not found' });
-    db.deleteModel(req.params.id);
+    await db.deleteModel(req.params.id);
     res.json({ model: existing });
-  });
+  }));
 
-  app.get('/api/history/:id', (req, res) => {
-    const model = db.getModel(req.params.id);
+  app.get('/api/history/:id', handle(async (req, res) => {
+    const model = await db.getModel(req.params.id);
     if (!model) return res.status(404).json({ error: 'Model not found' });
-    const history = db.getModelHistory(req.params.id);
-    const prev = db.getLatestSnapshot(req.params.id);
-    const changes = db.compareWithPrevious(model);
+    const history = await db.getModelHistory(req.params.id);
+    const prev = await db.getLatestSnapshot(req.params.id);
+    const changes = await db.compareWithPrevious(model);
     res.json({ model: { id: model.id, name: model.name, provider: model.provider, color: model.color }, history, previousSnapshot: prev, changes });
-  });
+  }));
 
-  app.get('/api/changes', (req, res) => {
-    const changes = db.getAllChanges();
+  app.get('/api/changes', handle(async (req, res) => {
+    const changes = await db.getAllChanges();
     res.json({ changes, count: changes.length, timestamp: new Date().toISOString() });
-  });
+  }));
 
-  app.post('/api/snapshot', (req, res) => {
-    const count = db.snapshotAllModels('manual');
+  app.post('/api/snapshot', handle(async (req, res) => {
+    const count = await db.snapshotAllModels('manual');
     res.json({ message: 'Snapshotted ' + count + ' models', count });
-  });
+  }));
 
-  app.get('/api/compare', (req, res) => {
+  app.get('/api/compare', handle(async (req, res) => {
     const ids = req.query.ids ? req.query.ids.split(',') : [];
-    const selected = ids.map(id => db.getModel(id)).filter(Boolean);
+    const selected = (await Promise.all(ids.map(id => db.getModel(id)))).filter(Boolean);
     res.json({ models: selected });
-  });
+  }));
 
-  app.get('/api/recommend', (req, res) => {
+  app.get('/api/recommend', handle(async (req, res) => {
     const task = (req.query.task || '').toLowerCase();
-    const models = db.getAllModels();
+    const models = await db.getAllModels();
     if (!task) {
       return res.json({ models: models.map(m => ({ id: m.id, name: m.name, provider: m.provider, bestFor: m.bestFor })) });
     }
@@ -161,7 +167,7 @@ function register(app) {
     });
     scored.sort((a, b) => b.relevanceScore - a.relevanceScore);
     res.json({ models: scored, task });
-  });
+  }));
 }
 
 module.exports = { register };

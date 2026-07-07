@@ -35,7 +35,7 @@ function register(app) {
       }
     }
 
-    const apiKey = getOpenRouterApiKey(req);
+    const apiKey = await getOpenRouterApiKey(req);
     if (!apiKey) return res.status(400).json({ error: 'OpenRouter API key not configured. Add it via Settings.' });
 
     const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
@@ -46,7 +46,7 @@ function register(app) {
 
     const results = [];
     for (const modelId of modelIds) {
-      const model = db.getModel(modelId);
+      const model = await db.getModel(modelId);
       if (!model) { results.push({ id: modelId, name: modelId, error: 'Model not found' }); continue; }
 
       let slug = model.openRouterSlug;
@@ -72,7 +72,7 @@ function register(app) {
         } catch (e) { /* skip */ }
       }
       if (!slug) { results.push({ id: modelId, name: model.name, error: 'No OpenRouter slug found. Try running "Live" pricing first, or check Settings > OpenRouter API key.' }); continue; }
-      if (!model.openRouterSlug) { model.openRouterSlug = slug; db.updateModel(model); }
+      if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
 
       const startTime = Date.now();
       try {
@@ -143,7 +143,7 @@ function register(app) {
           _empty: isEmpty || isNullContent || false,
         });
         try {
-          db.logUsage({
+          await db.logUsage({
             modelId, modelName: model.name, slug,
             promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens,
             cost: cost != null ? Math.round(cost * 10000) / 10000 : 0,
@@ -203,10 +203,10 @@ function register(app) {
         } catch (e) { /* skip */ }
       }
       if (!slug) return res.status(400).json({ error: 'No OpenRouter slug found' });
-      if (!model.openRouterSlug) { model.openRouterSlug = slug; db.updateModel(model); }
+      if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
     }
 
-    const apiKey = getOpenRouterApiKey(req);
+    const apiKey = await getOpenRouterApiKey(req);
     if (!apiKey) return res.status(400).json({ error: 'OpenRouter API key not configured' });
 
     const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
@@ -291,7 +291,7 @@ function register(app) {
       const cost = inPrice != null && outPrice != null ? ((inTokens * inPrice) + (outTokens * outPrice)) / 1e6 : null;
 
       try {
-        db.logUsage({ modelId, modelName: model.name, slug, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
+        await db.logUsage({ modelId, modelName: model.name, slug, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
       } catch (e) { /* skip */ }
 
       res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: orModel || slug, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');

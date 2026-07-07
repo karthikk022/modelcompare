@@ -275,8 +275,10 @@ function safeJson(str, fallback) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
-// ========== EXPORTS ==========
-function snapshotAllModels(source) {
+const api = {};
+
+// ========== ASYNC PUBLIC API ==========
+async function snapshotAllModels(source) {
   const models = stmts.getAll.all().map(rowToModel);
   const now = new Date().toISOString();
   for (const m of models) {
@@ -285,160 +287,148 @@ function snapshotAllModels(source) {
   return models.length;
 }
 
-module.exports = {
-  db,
-  migrateFromJson,
-  snapshotAllModels,
-  getAllModels() { return stmts.getAll.all().map(rowToModel); },
-  getModel(id) { return rowToModel(stmts.getById.get(id)); },
-  createModel(m) {
-    const row = modelToRow(m);
-    stmts.insert.run(row);
-    return rowToModel(stmts.getById.get(m.id));
-  },
-  updateModel(m) {
-    const row = modelToRow(m);
-    stmts.update.run(row);
-    return rowToModel(stmts.getById.get(m.id));
-  },
-  deleteModel(id) { stmts.delete.run(id); },
-  addChatEntry(role, content) {
-    stmts.upsertChat.run(role, content, new Date().toISOString());
-  },
-  getChatHistory() { return stmts.getChat.all(); },
-  // Settings
-  getSetting(key) {
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-    return row ? row.value : null;
-  },
-  setSetting(key, value) {
-    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
-  },
-  getAllSettings() {
-    const rows = db.prepare('SELECT key, value FROM settings').all();
-    const out = {};
-    for (const r of rows) out[r.key] = r.value;
-    return out;
-  },
-  // Auth
-  getApiKey(key) {
-    return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
-  },
-  createApiKey(name) {
-    const key = 'mc_' + crypto.randomBytes(24).toString('hex');
-    db.prepare('INSERT INTO api_keys (key, name) VALUES (?, ?)').run(key, name || 'default');
-    return key;
-  },
-  listApiKeys() {
-    return db.prepare('SELECT id, key, name, created_at, last_used FROM api_keys').all();
-  },
-  touchApiKey(key) {
-    db.prepare('UPDATE api_keys SET last_used = datetime(\'now\') WHERE key = ?').run(key);
-  },
-  // History
-  snapshotModel(m) {
-    const now = new Date().toISOString();
-    stmts.insertHistory.run(m.id, now, m.inputPrice, m.outputPrice, m.speed, m.arenaElo, JSON.stringify(m.benchmarks || {}), JSON.stringify(m.scores || {}), m._lastSource || 'manual');
-  },
-  getModelHistory(id) {
-    return stmts.getHistory.all(id).map(r => ({
-      id: r.id,
-      modelId: r.model_id,
-      snapshotAt: r.snapshot_at,
-      inputPrice: r.input_price,
-      outputPrice: r.output_price,
-      speed: r.speed,
-      arenaElo: r.arena_elo,
-      benchmarks: safeJson(r.benchmarks, {}),
-      scores: safeJson(r.scores, {}),
-      source: r.source,
-    }));
-  },
-  getLatestSnapshot(id) {
-    const r = stmts.getLatestSnapshot.get(id);
-    if (!r) return null;
-    return { inputPrice: r.input_price, outputPrice: r.output_price, speed: r.speed, arenaElo: r.arena_elo, benchmarks: safeJson(r.benchmarks, {}), snapshotAt: r.snapshot_at };
-  },
-  compareWithPrevious(model) {
-    const prev = this.getLatestSnapshot(model.id);
-    if (!prev) return null;
+api.db = db;
+api.migrateFromJson = migrateFromJson;
+api.snapshotAllModels = snapshotAllModels;
+api.getAllModels = async () => stmts.getAll.all().map(rowToModel);
+api.getModel = async (id) => rowToModel(stmts.getById.get(id));
+api.createModel = async (m) => {
+  const row = modelToRow(m);
+  stmts.insert.run(row);
+  return rowToModel(stmts.getById.get(m.id));
+};
+api.updateModel = async (m) => {
+  const row = modelToRow(m);
+  stmts.update.run(row);
+  return rowToModel(stmts.getById.get(m.id));
+};
+api.deleteModel = async (id) => stmts.delete.run(id);
+api.addChatEntry = async (role, content) => {
+  stmts.upsertChat.run(role, content, new Date().toISOString());
+};
+api.getChatHistory = async () => stmts.getChat.all();
+api.getSetting = async (key) => {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : null;
+};
+api.setSetting = async (key, value) => {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+};
+api.getAllSettings = async () => {
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const out = {};
+  for (const r of rows) out[r.key] = r.value;
+  return out;
+};
+api.getApiKey = async (key) => db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
+api.createApiKey = async (name) => {
+  const key = 'mc_' + crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO api_keys (key, name) VALUES (?, ?)').run(key, name || 'default');
+  return key;
+};
+api.listApiKeys = async () => db.prepare('SELECT id, key, name, created_at, last_used FROM api_keys').all();
+api.touchApiKey = async (key) => {
+  db.prepare('UPDATE api_keys SET last_used = datetime(\'now\') WHERE key = ?').run(key);
+};
+api.snapshotModel = async (m) => {
+  const now = new Date().toISOString();
+  stmts.insertHistory.run(m.id, now, m.inputPrice, m.outputPrice, m.speed, m.arenaElo, JSON.stringify(m.benchmarks || {}), JSON.stringify(m.scores || {}), m._lastSource || 'manual');
+};
+api.getModelHistory = async (id) => stmts.getHistory.all(id).map(r => ({
+  id: r.id,
+  modelId: r.model_id,
+  snapshotAt: r.snapshot_at,
+  inputPrice: r.input_price,
+  outputPrice: r.output_price,
+  speed: r.speed,
+  arenaElo: r.arena_elo,
+  benchmarks: safeJson(r.benchmarks, {}),
+  scores: safeJson(r.scores, {}),
+  source: r.source,
+}));
+api.getLatestSnapshot = async (id) => {
+  const r = stmts.getLatestSnapshot.get(id);
+  if (!r) return null;
+  return { inputPrice: r.input_price, outputPrice: r.output_price, speed: r.speed, arenaElo: r.arena_elo, benchmarks: safeJson(r.benchmarks, {}), snapshotAt: r.snapshot_at };
+};
+api.compareWithPrevious = async (model) => {
+  const prev = await api.getLatestSnapshot(model.id);
+  if (!prev) return null;
+  const changes = {};
+  for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
+    if (model[key] != null && prev[key] != null && model[key] !== prev[key]) {
+      changes[key] = { from: prev[key], to: model[key], diff: model[key] - prev[key] };
+    }
+  }
+  const benchKeys = [...new Set([...Object.keys(model.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
+  for (const k of benchKeys) {
+    const cur = model.benchmarks && model.benchmarks[k];
+    const old = prev.benchmarks && prev.benchmarks[k];
+    if (cur != null && old != null && cur !== old) {
+      changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
+    } else if (cur != null && old == null) {
+      changes['bench_' + k] = { from: null, to: cur, diff: null, label: 'new' };
+    }
+  }
+  return Object.keys(changes).length ? changes : null;
+};
+api.getAllChanges = async () => {
+  const rows = stmts.getRecentChanges.all();
+  const result = [];
+  for (const row of rows) {
+    const m = { id: row.model_id, name: row.name, provider: row.provider, color: row.color };
+    const current = stmts.getById.get(row.model_id);
+    if (!current) continue;
+    const prev = { inputPrice: row.input_price, outputPrice: row.output_price, speed: row.speed, arenaElo: row.arena_elo, benchmarks: safeJson(row.benchmarks, {}), snapshotAt: row.snapshot_at, scores: safeJson(row.scores, {}) };
     const changes = {};
     for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
-      if (model[key] != null && prev[key] != null && model[key] !== prev[key]) {
-        changes[key] = { from: prev[key], to: model[key], diff: model[key] - prev[key] };
+      if (current[key] != null && prev[key] != null && Math.abs(current[key] - prev[key]) > 0.001) {
+        changes[key] = { from: prev[key], to: current[key], diff: current[key] - prev[key] };
       }
     }
-    const benchKeys = [...new Set([...Object.keys(model.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
+    const benchKeys = [...new Set([...Object.keys(current.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
     for (const k of benchKeys) {
-      const cur = model.benchmarks && model.benchmarks[k];
+      const cur = current.benchmarks && current.benchmarks[k];
       const old = prev.benchmarks && prev.benchmarks[k];
-      if (cur != null && old != null && cur !== old) {
+      if (cur != null && old != null && Math.abs(cur - old) > 0.01) {
         changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
-      } else if (cur != null && old == null) {
-        changes['bench_' + k] = { from: null, to: cur, diff: null, label: 'new' };
       }
     }
-    return Object.keys(changes).length ? changes : null;
-  },
-  getAllChanges() {
-    const rows = stmts.getRecentChanges.all();
-    const result = [];
-    for (const row of rows) {
-      const m = { id: row.model_id, name: row.name, provider: row.provider, color: row.color };
-      // Get current model
-      const current = stmts.getById.get(row.model_id);
-      if (!current) continue;
-      const prev = { inputPrice: row.input_price, outputPrice: row.output_price, speed: row.speed, arenaElo: row.arena_elo, benchmarks: safeJson(row.benchmarks, {}), snapshotAt: row.snapshot_at, scores: safeJson(row.scores, {}) };
-      const changes = {};
-      for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
-        if (current[key] != null && prev[key] != null && Math.abs(current[key] - prev[key]) > 0.001) {
-          changes[key] = { from: prev[key], to: current[key], diff: current[key] - prev[key] };
-        }
-      }
-      const benchKeys = [...new Set([...Object.keys(current.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
-      for (const k of benchKeys) {
-        const cur = current.benchmarks && current.benchmarks[k];
-        const old = prev.benchmarks && prev.benchmarks[k];
-        if (cur != null && old != null && Math.abs(cur - old) > 0.01) {
-          changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
-        }
-      }
-      if (Object.keys(changes).length) {
-        result.push({ model: m, snapshotAt: row.snapshot_at, changes });
-      }
+    if (Object.keys(changes).length) {
+      result.push({ model: m, snapshotAt: row.snapshot_at, changes });
     }
-    return result;
-  },
-  logUsage(entry) {
-    stmts.logUsage.run(entry);
-  },
-  getUsageStats(days) {
-    const since = new Date(Date.now() - days * 86400000).toISOString();
-    const rows = stmts.getUsageStats.all(since);
-    const total = { calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
-    const byModel = {};
-    const byDay = {};
-    for (const r of rows) {
-      total.calls++;
-      total.promptTokens += r.prompt_tokens;
-      total.completionTokens += r.completion_tokens;
-      total.totalTokens += r.total_tokens;
-      total.cost += r.cost;
-      total.latencyMs += r.latency_ms;
-      const mid = r.model_id;
-      if (!byModel[mid]) byModel[mid] = { modelId: mid, modelName: r.model_name, calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
-      byModel[mid].calls++;
-      byModel[mid].promptTokens += r.prompt_tokens;
-      byModel[mid].completionTokens += r.completion_tokens;
-      byModel[mid].totalTokens += r.total_tokens;
-      byModel[mid].cost += r.cost;
-      byModel[mid].latencyMs += r.latency_ms;
-      const day = r.created_at ? r.created_at.substring(0, 10) : 'unknown';
-      if (!byDay[day]) byDay[day] = { date: day, calls: 0, totalTokens: 0, cost: 0 };
-      byDay[day].calls++;
-      byDay[day].totalTokens += r.total_tokens;
-      byDay[day].cost += r.cost;
-    }
-    return { total, byModel: Object.values(byModel), byDay: Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date)) };
-  },
+  }
+  return result;
 };
+api.logUsage = async (entry) => stmts.logUsage.run(entry);
+api.getUsageStats = async (days) => {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  const rows = stmts.getUsageStats.all(since);
+  const total = { calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
+  const byModel = {};
+  const byDay = {};
+  for (const r of rows) {
+    total.calls++;
+    total.promptTokens += r.prompt_tokens;
+    total.completionTokens += r.completion_tokens;
+    total.totalTokens += r.total_tokens;
+    total.cost += r.cost;
+    total.latencyMs += r.latency_ms;
+    const mid = r.model_id;
+    if (!byModel[mid]) byModel[mid] = { modelId: mid, modelName: r.model_name, calls: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, latencyMs: 0 };
+    byModel[mid].calls++;
+    byModel[mid].promptTokens += r.prompt_tokens;
+    byModel[mid].completionTokens += r.completion_tokens;
+    byModel[mid].totalTokens += r.total_tokens;
+    byModel[mid].cost += r.cost;
+    byModel[mid].latencyMs += r.latency_ms;
+    const day = r.created_at ? r.created_at.substring(0, 10) : 'unknown';
+    if (!byDay[day]) byDay[day] = { date: day, calls: 0, totalTokens: 0, cost: 0 };
+    byDay[day].calls++;
+    byDay[day].totalTokens += r.total_tokens;
+    byDay[day].cost += r.cost;
+  }
+  return { total, byModel: Object.values(byModel), byDay: Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date)) };
+};
+
+module.exports = api;
