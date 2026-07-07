@@ -834,7 +834,7 @@ async function loadModels() {
 
 function populateFilterProviders() {
   const provs = [...new Set(models.map(m => m.provider).filter(Boolean))];
-  const pop = sel => { sel.innerHTML = '<option value=\"\">All</option>' + provs.map(p => '<option value=\"' + p + '\">' + p + '</option>').join(''); };
+  const pop = sel => { sel.innerHTML = '<option value=\"\">All</option>' + provs.map(p => '<option value=\"' + escapeHtml(p) + '\">' + escapeHtml(p) + '</option>').join(''); };
   pop(document.getElementById('filterProvider'));
   const lf = document.getElementById('lbFilterProvider'); if(lf) pop(lf);
   const tf = document.getElementById('tlFilterProvider'); if(tf) pop(tf);
@@ -862,7 +862,9 @@ function applyFilters() {
     const sc = Object.entries(m.scores||{}).slice(0,3).map(([k,v]) => '<span class="score-pill">'+k+': '+v+'</span>').join('');
     const bm = [['MMLU-Pro','MMLU'],['GPQA Diamond','GPQA'],['SWE-bench Verified','SWE']].map(([k,label]) => { const v = m.benchmarks && m.benchmarks[k]; return v != null ? '<span class="score-pill bm-pill">'+label+': '+v+'%</span>' : ''; }).filter(Boolean).join('');
     const c = document.createElement('div'); c.className = 'model-card'+(sel?' selected':''); c.id = 'card-'+m.id;
-    c.innerHTML = '<div class=\"card-head\"><div class=\"card-logo\" style=\"background:'+(m.color||'#6b7280')+'\">'+(m.logo||m.name.charAt(0))+'</div><div class=\"card-check\" onclick=\"event.stopPropagation();toggleSelect(\''+m.id+'\')\">'+(sel?'&#10003;':'')+'</div></div><h3>'+m.name+(isNewModel(m)?'<span class=\"new-badge\">NEW</span>':'')+'</h3><div class=\"provider\">'+(m.provider||'')+'</div><div class=\"scores\">'+(bm || sc)+'</div><div class=\"card-footer\"><span>'+(m.inputPrice!=null?'$'+m.inputPrice.toFixed(2)+'/M':'')+'</span><span>'+(m.speed?m.speed+' tok/s':'')+'</span><span>'+formatContext(m.contextWindow)+' ctx</span></div><div class=\"card-actions\"><button class=\"card-action-btn\" onclick=\"event.stopPropagation();openDetail(\''+m.id+'\')\" title=\"View\">&#128269;</button><button class=\"card-action-btn\" onclick=\"event.stopPropagation();openEditModal(\''+m.id+'\')\" title=\"Edit\">&#9998;</button><button class=\"card-action-btn danger\" onclick=\"event.stopPropagation();deleteModel(\''+m.id+'\')\" title=\"Delete\">&#10005;</button></div>';
+    const safeName = escapeHtml(m.name);
+    const safeProvider = escapeHtml(m.provider || '');
+    c.innerHTML = '<div class=\"card-head\"><div class=\"card-logo\" style=\"background:'+(m.color||'#6b7280')+'\">'+(m.logo||m.name.charAt(0))+'</div><div class=\"card-check\" onclick=\"event.stopPropagation();toggleSelect(\''+m.id+'\')\">'+(sel?'&#10003;':'')+'</div></div><h3>'+safeName+(isNewModel(m)?'<span class=\"new-badge\">NEW</span>':'')+'</h3><div class=\"provider\">'+safeProvider+'</div><div class=\"scores\">'+(bm || sc)+'</div><div class=\"card-footer\"><span>'+(m.inputPrice!=null?'$'+m.inputPrice.toFixed(2)+'/M':'')+'</span><span>'+(m.speed?m.speed+' tok/s':'')+'</span><span>'+formatContext(m.contextWindow)+' ctx</span></div><div class=\"card-actions\"><button class=\"card-action-btn\" onclick=\"event.stopPropagation();openDetail(\''+m.id+'\')\" title=\"View\">&#128269;</button><button class=\"card-action-btn\" onclick=\"event.stopPropagation();openEditModal(\''+m.id+'\')\" title=\"Edit\">&#9998;</button><button class=\"card-action-btn danger\" onclick=\"event.stopPropagation();deleteModel(\''+m.id+'\')\" title=\"Delete\">&#10005;</button></div>';
     c.onclick = () => openDetail(m.id); g.appendChild(c);
   });
 }
@@ -940,7 +942,7 @@ function renderSpecsTable(cm) {
     { label:'Release Date', key:'releaseDate', fmt:v=>v?new Date(v).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}):'-' },
     { label:'Architecture', key:'architecture', fmt:v=>v||'-' }, { label:'Parameters', key:'parameters', fmt:v=>v||'-' },
   ];
-  document.querySelector('#specsTable thead tr').innerHTML = '<th>Spec</th>'+cm.map(m=>'<th>'+m.name+'</th>').join('');
+  document.querySelector('#specsTable thead tr').innerHTML = '<th>Spec</th>'+cm.map(m=>'<th>'+escapeHtml(m.name)+'</th>').join('');
   const tbody = document.querySelector('#specsTable tbody');
   tbody.innerHTML = [...numRows,...strRows].map(r => {
     const vals = cm.map(m => r.fmt(r.key==='contextWindow'?m[r.key]:m[r.key]));
@@ -952,7 +954,7 @@ function renderSpecsTable(cm) {
 
 function renderFeaturesTable(cm) {
   const af = [...new Set(cm.flatMap(m=>m.features||[]))];
-  document.querySelector('#featuresTable thead tr').innerHTML = '<th>Feature</th>'+cm.map(m=>'<th>'+m.name+'</th>').join('');
+  document.querySelector('#featuresTable thead tr').innerHTML = '<th>Feature</th>'+cm.map(m=>'<th>'+escapeHtml(m.name)+'</th>').join('');
   document.querySelector('#featuresTable tbody').innerHTML = af.map(f => {
     const vs = cm.map(m=>(m.features||[]).includes(f)?'&#10003;':'&#10007;');
     return '<tr><td>'+f+'</td>'+vs.map(v=>'<td style=\"font-size:1.1rem;'+(v==='&#10007;'?'color:var(--text-muted)':'color:#22c55e')+'\">'+v+'</td>').join('')+'</tr>';
@@ -1024,7 +1026,7 @@ async function recommendTask() {
   const r = await fetch('/api/recommend?task='+encodeURIComponent(t));
   const d = await r.json(); const c = document.getElementById('recResults');
   if(!d.models||!d.models.length) { c.innerHTML='<div class=\"rec-card\">No matches.</div>'; return; }
-  c.innerHTML = d.models.slice(0,5).map(m=>'<div class=\"rec-card\"><span style=\"font-weight:600;\">'+m.name+'</span><span style=\"color:var(--text-muted);font-size:0.8rem;\">'+(m.provider||'')+'</span><span class=\"rec-score\">'+m.relevanceScore+'</span></div>').join('');
+  c.innerHTML = d.models.slice(0,5).map(m=>'<div class=\"rec-card\"><span style=\"font-weight:600;\">'+escapeHtml(m.name)+'</span><span style=\"color:var(--text-muted);font-size:0.8rem;\">'+escapeHtml(m.provider||'')+'</span><span class=\"rec-score\">'+m.relevanceScore+'</span></div>').join('');
 }
 function quickRec(el) { document.getElementById('recInput').value = el.textContent; recommendTask(); }
 
@@ -1035,13 +1037,13 @@ function openDetail(id) {
   const fe = (m.features||[]).map(f=>'<span class=\"tag\">'+f+'</span>').join('');
   const bf = (m.bestFor||[]).map(t=>'<span class=\"tag\">'+t+'</span>').join('');
   const isSel = selectedModels.has(m.id);
-  document.getElementById('detailContent').innerHTML = '<div style=\"display:flex;justify-content:space-between;align-items:flex-start;\"><div><h2><span class=\"lb-dot\" style=\"background:'+(m.color||'#6366f1')+';display:inline-block;vertical-align:middle;\"></span> '+m.name+'</h2><div class=\"detail-subtitle\">'+(m.provider||'')+' &middot; '+(m.releaseDate?new Date(m.releaseDate).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}):'N/A')+'</div></div><button class=\"btn '+(isSel?'btn-secondary':'btn-primary')+'\" onclick=\"toggleDetailSelect(\''+m.id+'\')\">'+(isSel?'Remove':'Add to Compare')+'</button></div><div class=\"detail-section\"><p>'+(m.description||'')+'</p></div><div class=\"detail-section\"><h3>Specs</h3><div class=\"detail-grid\">'+['contextWindow','outputLimit','inputPrice','outputPrice','speed','arenaElo','architecture','parameters'].map(k => {
+  document.getElementById('detailContent').innerHTML = '<div style=\"display:flex;justify-content:space-between;align-items:flex-start;\"><div><h2><span class=\"lb-dot\" style=\"background:'+(m.color||'#6366f1')+';display:inline-block;vertical-align:middle;\"></span> '+escapeHtml(m.name)+'</h2><div class=\"detail-subtitle\">'+escapeHtml(m.provider||'')+' &middot; '+(m.releaseDate?new Date(m.releaseDate).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}):'N/A')+'</div></div><button class=\"btn '+(isSel?'btn-secondary':'btn-primary')+'\" onclick=\"toggleDetailSelect(\''+m.id+'\')\">'+(isSel?'Remove':'Add to Compare')+'</button></div><div class=\"detail-section\"><p>'+escapeHtml(m.description||'')+'</p></div><div class=\"detail-section\"><h3>Specs</h3><div class=\"detail-grid\">'+['contextWindow','outputLimit','inputPrice','outputPrice','speed','arenaElo','architecture','parameters'].map(k => {
     const labels = {contextWindow:'Context',outputLimit:'Output Limit',inputPrice:'Input $/M',outputPrice:'Output $/M',speed:'tok/s',arenaElo:'Elo',architecture:'Architecture',parameters:'Parameters'};
     let v = m[k]; if(k==='contextWindow') v=formatContext(v); else if(k==='outputLimit') v=v?Math.round(v/1000)+'K':'N/A'; else if(k==='inputPrice'||k==='outputPrice') v=v!=null?'$'+v.toFixed(2)+'/M':'N/A'; else if(k==='speed') v=v?v+' tok/s':'N/A'; else if(k==='arenaElo') v=v||'N/A'; else v=v||'N/A';
     return '<div class=\"dg-item\"><span class=\"dg-label\">'+labels[k]+'</span><span class=\"dg-value\">'+v+'</span></div>';
   }).join('')+'</div></div>'+(sc?'<div class=\"detail-section\"><h3>Capabilities</h3><div class=\"detail-grid\">'+sc+'</div></div>':'')+(be?'<div class=\"detail-section\"><h3>Benchmarks</h3><div class=\"detail-grid\">'+be+'</div></div>':'')+
   '<div class=\"detail-section\" id=\"historySection\"><h3>Trend History</h3><div class=\"history-trend\" id=\"historyTrend\"><div class=\"loading\" style=\"padding:1rem 0;\">Loading history...</div></div></div>'+
-  (bf?'<div class=\"detail-section\"><h3>Best For</h3><div class=\"tag-list\">'+bf+'</div></div>':'')+(fe?'<div class=\"detail-section\"><h3>Features</h3><div class=\"tag-list\">'+fe+'</div></div>':'')+(m.strengths?'<div class=\"detail-section\"><h3>Strengths</h3><p>'+m.strengths+'</p></div>':'')+(m.weaknesses?'<div class=\"detail-section\"><h3>Weaknesses</h3><p>'+m.weaknesses+'</p></div>':'')+'<div class=\"detail-section\" style=\"text-align:right;margin-bottom:0;\"><button class=\"btn btn-secondary btn-sm\" onclick=\"closeDetail()\">Close</button></div>';
+  (bf?'<div class=\"detail-section\"><h3>Best For</h3><div class=\"tag-list\">'+bf+'</div></div>':'')+(fe?'<div class=\"detail-section\"><h3>Features</h3><div class=\"tag-list\">'+fe+'</div></div>':'')+(m.strengths?'<div class=\"detail-section\"><h3>Strengths</h3><p>'+escapeHtml(m.strengths)+'</p></div>':'')+(m.weaknesses?'<div class=\"detail-section\"><h3>Weaknesses</h3><p>'+escapeHtml(m.weaknesses)+'</p></div>':'')+'<div class=\"detail-section\" style=\"text-align:right;margin-bottom:0;\"><button class=\"btn btn-secondary btn-sm\" onclick=\"closeDetail()\">Close</button></div>';
   document.getElementById('detailModal').classList.add('show');
 
   // Fetch and render history
@@ -1345,7 +1347,7 @@ function renderTimeline() {
   const c = document.getElementById('tlContainer'); const fp = document.getElementById('tlFilterProvider').value;
   let m = [...window._allModels]; if(fp) m=m.filter(x=>x.provider===fp); m.sort((a,b)=>new Date(a.releaseDate)-new Date(b.releaseDate));
   const fm={}; m.forEach(x=>{const f=x.family||x.provider||'Other'; if(!fm[f]) fm[f]=[]; fm[f].push(x);});
-  c.innerHTML = Object.keys(fm).map(f=>'<div class=\"tl-group-label\">'+f+'</div>'+fm[f].map(x=>{const d=x.strengths?x.strengths.split('.')[0]+'.':''; const t=x.bestFor?x.bestFor.slice(0,3).map(t2=>'<span class=\"tl-tag\">'+t2+'</span>').join(''):''; const p=x.predecessor?'<div class=\"tl-prev\">&#8592; '+x.predecessor+'</div>':''; return '<div class=\"tl-item\"><div class=\"tl-date\">'+(x.releaseDate||'N/A')+'</div><div class=\"tl-head\"><span class=\"tl-dot\" style=\"background:'+(x.color||'#6366f1')+'\"></span><span class=\"tl-name\">'+x.name+'</span><span class=\"tl-provider\">'+(x.provider||'')+'</span></div><div class=\"tl-desc\">'+d+'</div>'+t+p+'</div>';}).join('')).join('')||'<div class=\"empty-state\"><div class=\"icon\">&#128240;</div><p>No models</p></div>';
+  c.innerHTML = Object.keys(fm).map(f=>'<div class=\"tl-group-label\">'+escapeHtml(f)+'</div>'+fm[f].map(x=>{const d=x.strengths?escapeHtml(x.strengths.split('.')[0]+'.'):''; const t=x.bestFor?x.bestFor.slice(0,3).map(t2=>'<span class=\"tl-tag\">'+escapeHtml(t2)+'</span>').join(''):''; const p=x.predecessor?'<div class=\"tl-prev\">&#8592; '+escapeHtml(x.predecessor)+'</div>':''; return '<div class=\"tl-item\"><div class=\"tl-date\">'+(x.releaseDate||'N/A')+'</div><div class=\"tl-head\"><span class=\"tl-dot\" style=\"background:'+(x.color||'#6366f1')+'\"></span><span class=\"tl-name\">'+escapeHtml(x.name)+'</span><span class=\"tl-provider\">'+escapeHtml(x.provider||'')+'</span></div><div class=\"tl-desc\">'+d+'</div>'+t+p+'</div>';}).join('')).join('')||'<div class=\"empty-state\"><div class=\"icon\">&#128240;</div><p>No models</p></div>';
   document.getElementById('tlCount').textContent=m.length+' milestones';
 }
 
@@ -1403,12 +1405,12 @@ function renderDiscover() {
     const hasBench = Object.keys(m.benchmarks||{}).length > 0;
     return '<div style="background:var(--bg-card);border:1px solid '+(m._selected?'var(--accent)':'var(--border)')+';border-radius:var(--radius-sm);padding:0.6rem 0.75rem;cursor:pointer;transition:var(--transition);" onclick="toggleDisc(\''+m.id+'\')" class="'+(m._selected?'selected':'')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">'+
-        '<span style="font-weight:600;font-size:0.85rem;">'+(m.name||m.id)+'</span>'+
-        '<span style="font-size:0.7rem;color:var(--text-muted);background:var(--bg-primary);padding:0.1rem 0.35rem;border-radius:3px;">'+(m.provider||'')+'</span>'+
+        '<span style="font-weight:600;font-size:0.85rem;">'+escapeHtml(m.name||m.id)+'</span>'+
+        '<span style="font-size:0.7rem;color:var(--text-muted);background:var(--bg-primary);padding:0.1rem 0.35rem;border-radius:3px;">'+escapeHtml(m.provider||'')+'</span>'+
       '</div>'+
-      '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.3rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">'+(m.description||'')+'</div>'+
+      '<div style="font-size:0.72rem;color:var(--text-secondary);margin-bottom:0.3rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">'+escapeHtml(m.description||'')+'</div>'+
       '<div style="display:flex;gap:0.3rem;flex-wrap:wrap;font-size:0.65rem;">'+
-        (m.parameters?'<span style="color:var(--text-muted);">'+m.parameters+'</span>':'')+
+        (m.parameters?'<span style="color:var(--text-muted);">'+escapeHtml(m.parameters)+'</span>':'')+
         (m.likes?'<span style="color:var(--text-muted);">&#10084; '+m.likes+'</span>':'')+
         (hasBench?'<span style="color:#22c55e;">&#10003; benchmarks</span>':'<span style="color:var(--text-muted);">no benchmarks</span>')+
         (m.arenaElo?'<span style="color:var(--accent);">Elo '+m.arenaElo+'</span>':'')+
@@ -2134,8 +2136,8 @@ function renderChanges() {
     return '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:0.75rem;animation:fadeSlideIn 0.3s ease forwards;cursor:pointer;" onclick="openDetail(\'' + (model.id || '') + '\')">' +
       '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">' +
         '<span class="lb-dot" style="background:' + (model.color || '#6b7280') + ';width:10px;height:10px;"></span>' +
-        '<span style="font-weight:700;font-size:0.9rem;">' + (model.name || 'Unknown') + '</span>' +
-        '<span style="font-size:0.75rem;color:var(--text-muted);">' + (model.provider || '') + '</span>' +
+        '<span style="font-weight:700;font-size:0.9rem;">' + escapeHtml(model.name || 'Unknown') + '</span>' +
+        '<span style="font-size:0.75rem;color:var(--text-muted);">' + escapeHtml(model.provider || '') + '</span>' +
         '<span style="font-size:0.65rem;color:var(--text-muted);margin-left:auto;">' + (c.snapshotAt ? new Date(c.snapshotAt).toLocaleString() : '') + '</span>' +
         (sigCount > 0 ? '<span style="font-size:0.6rem;padding:0.1rem 0.35rem;border-radius:3px;background:#ef444420;color:#ef4444;font-weight:600;">' + sigCount + ' significant</span>' : '') +
       '</div>' +
