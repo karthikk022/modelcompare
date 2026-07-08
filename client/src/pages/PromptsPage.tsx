@@ -28,7 +28,7 @@ export default function PromptsPage() {
     try {
       const data = await testPrompt(selectedIds, prompt, systemPrompt, maxTokens, temperature, webSearch)
       setResults(data.results)
-    } catch { setResults([{ id: 'error', name: 'Error', content: null, finishReason: null, latency: 0, inTokens: 0, outTokens: 0, cost: null, error: 'Request failed' }]) }
+    } catch (e: any) { setResults([{ id: 'error', name: 'Error', content: null, finishReason: null, latency: 0, inTokens: 0, outTokens: 0, cost: null, error: e?.message || 'Request failed' }]) }
     setLoading(false)
   }
 

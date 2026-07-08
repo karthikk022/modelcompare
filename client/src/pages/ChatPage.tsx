@@ -126,7 +126,7 @@ export default function ChatPage() {
           webSearch: newConv.webSearch,
         }),
       })
-      if (!res.ok) throw new Error('Request failed')
+      if (!res.ok) { const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` })); throw new Error(err.error || 'Request failed') }
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -220,6 +220,7 @@ export default function ChatPage() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ models: [modelId], messages: msgs, maxTokens: conv.maxTokens, temperature: conv.temperature, webSearch: conv.webSearch }),
         })
+        if (!res.ok) { const err = await res.json().catch(() => ({ error: 'Request failed' })); throw new Error(err.error) }
         const d = await res.json()
         if (d.results?.[0]) {
           setConv(prev => {

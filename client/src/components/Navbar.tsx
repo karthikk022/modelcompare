@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 
 const links = [
   { to: '/', label: 'Models' },
@@ -9,6 +9,7 @@ const links = [
 ]
 
 export default function Navbar() {
+  const navigate = useNavigate()
   return (
     <nav className="navbar">
       <div className="navbar-brand">ModelCompare</div>
@@ -19,6 +20,7 @@ export default function Navbar() {
           </NavLink>
         ))}
       </div>
+      <button className="btn btn-sm" onClick={() => navigate('/?settings=1')} title="Settings">Settings</button>
     </nav>
   )
 }

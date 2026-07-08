@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { Model } from '../types'
 import { fetchModels, deleteModel, exportModels, fetchProviders } from '../api'
 import ModelCard from '../components/ModelCard'
@@ -12,6 +13,7 @@ const PAGE_SIZE = 50;
 
 export default function ModelsPage() {
   const { theme, toggleTheme } = useTheme()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [models, setModels] = useState<Model[]>([])
   const [total, setTotal] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -22,7 +24,7 @@ export default function ModelsPage() {
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState<Model | null | true>(null)
-  const [showSettings, setShowSettings] = useState(false)
+  const [showSettings, setShowSettings] = useState(searchParams.get('settings') === '1')
   const [providers, setProviders] = useState<string[]>([])
   const fetchId = useRef(0)
 
@@ -166,7 +168,7 @@ export default function ModelsPage() {
       )}
 
       {showForm && <ModelForm model={showForm === true ? null : showForm} onClose={() => setShowForm(null)} onSaved={handleSaved} />}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsModal onClose={() => { setShowSettings(false); setSearchParams({}) }} />}
     </div>
   )
 }
