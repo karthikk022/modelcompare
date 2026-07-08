@@ -113,7 +113,7 @@ async function start() {
   if (!require('fs').existsSync(reactIndex)) {
     console.log('React build not found — building client...');
     const { execSync } = require('child_process');
-    execSync('npm run build:client', { cwd: __dirname, stdio: 'inherit' });
+    execSync('npm run build:client', { cwd: PROJECT_ROOT, stdio: 'inherit' });
   }
   server = app.listen(PORT, '0.0.0.0', async () => {
     console.log('AI Model Compare running on http://localhost:' + PORT);
