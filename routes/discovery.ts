@@ -3,8 +3,12 @@ const path = require('path');
 const db = require('../db');
 const { fetchLivePricing, hfFetch, stringToColor, handle } = require('./utils');
 
-const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
-const _ELO_LOOKUP = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'benchmarks-data', 'elo-lookup.json'), 'utf8'));
+const _PROJECT_ROOT = (() => {
+  let d = fs.realpathSync(__dirname);
+  for (let i = 0; i < 4; i++) { if (fs.existsSync(path.join(d, 'package.json'))) return d; const up = path.resolve(d, '..'); if (up === d) break; d = up; }
+  return __dirname;
+})();
+const _ELO_LOOKUP = JSON.parse(fs.readFileSync(path.join(_PROJECT_ROOT, 'benchmarks-data', 'elo-lookup.json'), 'utf8'));
 
 const _SKIP_PATTERNS = /\bfinetune\b|\blora\b|\bmerge\b|\badapt\b|\binstruct\b|\bgguf\b|\bgptq\b|\bawq\b|\bbitsandbytes\b|\bfp16\b|\bfp8\b|\bint8\b|\bint4\b|\bmlx\b|\bollama\b|\btrl\b|\bunsloth\b|\btest\b|\btutorial\b|\bplayground\b|\bscratch\b|\bsandbox\b|\bdpo\b|\bsft\b|\brlhf\b|\bppo\b|\bgrpo\b|\borpo\b|\bkto\b/i;
 

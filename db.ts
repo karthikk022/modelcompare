@@ -2,7 +2,16 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const PROJECT_ROOT = (() => {
+  let d = fs.realpathSync(__dirname);
+  for (let i = 0; i < 4; i++) {
+    if (fs.existsSync(path.join(d, 'package.json'))) return d;
+    const up = path.resolve(d, '..');
+    if (up === d) break;
+    d = up;
+  }
+  return __dirname;
+})();
 const DB_PATH = path.join(PROJECT_ROOT, 'data', 'models.db');
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 
@@ -110,7 +119,7 @@ for (const m of migrations) {
 
 // ========== MIGRATE FROM JSON ==========
 function migrateFromJson() {
-  const jsonPath = path.join(__dirname, 'models-data', 'models.json');
+  const jsonPath = path.join(PROJECT_ROOT, 'models-data', 'models.json');
   if (!fs.existsSync(jsonPath)) return;
   
   const count = db.prepare('SELECT COUNT(*) as c FROM models').get().c;

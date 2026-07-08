@@ -3,7 +3,11 @@ const path = require('path');
 const db = require('../db');
 const { hfFetch, handle } = require('./utils');
 
-const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const PROJECT_ROOT = (() => {
+  let d = fs.realpathSync(__dirname);
+  for (let i = 0; i < 4; i++) { if (fs.existsSync(path.join(d, 'package.json'))) return d; const up = path.resolve(d, '..'); if (up === d) break; d = up; }
+  return __dirname;
+})();
 const BENCHMARKS_FILE = path.join(PROJECT_ROOT, 'benchmarks-data', 'benchmarks.json');
 let _CURATED_BENCHMARKS = [];
 try {
