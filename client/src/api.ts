@@ -2,8 +2,12 @@ import type { Model } from './types';
 
 const BASE = '/api';
 
-export async function fetchModels(): Promise<Model[]> {
-  const res = await fetch(`${BASE}/models`);
+export async function fetchModels(opts?: { limit?: number; offset?: number }): Promise<Model[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.offset) params.set('offset', String(opts.offset));
+  const qs = params.toString();
+  const res = await fetch(`${BASE}/models${qs ? '?' + qs : ''}`);
   if (!res.ok) throw new Error('Failed to fetch models');
   const data = await res.json();
   return data.models;

@@ -20,19 +20,24 @@ function isAuthConfigured() {
 }
 
 /*
- * CSRF mitigation for JSON API: requires X-Requested-With header on mutation requests.
- * Browsers enforce CORS preflight for non-standard headers, so an attacker on a
- * different origin cannot forge this header without a preflight that CORS would block.
- * Combined with API_KEY auth + restricted CORS origins, this closes the remaining
- * CSRF vector for cookie-free API servers.
+ * CSRF mitigation: validates Origin header on mutation requests when auth is active.
+ * Browsers always send the Origin header on cross-origin requests. We already restrict
+ * CORS via ALLOWED_ORIGINS, so this is a defense-in-depth check — any origin that
+ * survived CORS preflight is also checked here.
+ * Notes:
+ *   - If ALLOWED_ORIGINS is empty/unset, CSRF check skips (fallback to CORS-only).
+ *   - Missing Origin (server-to-server, curl, Postman) is allowed.
+ *   - This approach requires zero client changes — the React app works as-is.
  */
 function requireCsrf(req, res, next) {
   const apiKey = process.env.API_KEY || null;
   if (!apiKey) return next();
+  const origins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (origins.length === 0) return next();
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    const requestedWith = req.headers['x-requested-with'];
-    if (requestedWith !== 'XMLHttpRequest') {
-      return res.status(403).json({ error: 'CSRF: X-Requested-With header required' });
+    const origin = req.headers['origin'];
+    if (origin && !origins.some(o => origin === o || origin.startsWith(o + '/'))) {
+      return res.status(403).json({ error: 'CSRF: origin not allowed' });
     }
   }
   next();

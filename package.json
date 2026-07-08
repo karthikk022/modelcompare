@@ -4,8 +4,9 @@
   "description": "AI Model Comparison Dashboard",
   "main": "server.js",
   "scripts": {
-    "start": "cd client && npm run build && cd .. && node server.js",
-    "build": "cd client && npm run build",
+    "start": "npm run build:client && node server.js",
+    "dev": "node server.js",
+    "build:client": "cd client && npm run build",
     "postinstall": "cd client && npm install && npm run build",
     "test": "mocha tests/*.test.js --timeout 10000"
   },

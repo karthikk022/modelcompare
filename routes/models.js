@@ -61,7 +61,11 @@ function fillDefaults(model) {
 function register(app) {
 
   app.get('/api/models', handle(async (req, res) => {
-    res.json({ models: await db.getAllModels() });
+    const models = await db.getAllModels();
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 0, 0), 1000);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const sliced = offset > 0 || limit > 0 ? models.slice(offset, offset + (limit || models.length)) : models;
+    res.json({ models: sliced, count: sliced.length, total: models.length });
   }));
 
   app.get('/api/models/export', handle(async (req, res) => {

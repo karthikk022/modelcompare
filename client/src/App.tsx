@@ -1,6 +1,7 @@
 import { lazy, Suspense, createContext, useContext, useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Navbar from './components/Navbar'
+import ErrorBoundary from './components/ErrorBoundary'
 import './App.css'
 
 const ModelsPage = lazy(() => import('./pages/ModelsPage'))
@@ -36,11 +37,11 @@ function App() {
           <Navbar />
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              <Route path="/" element={<ModelsPage />} />
-              <Route path="/compare" element={<ComparePage />} />
-              <Route path="/discover" element={<DiscoveryPage />} />
-              <Route path="/prompts" element={<PromptsPage />} />
-              <Route path="/chat" element={<ChatPage />} />
+              <Route path="/" element={<ErrorBoundary><ModelsPage /></ErrorBoundary>} />
+              <Route path="/compare" element={<ErrorBoundary><ComparePage /></ErrorBoundary>} />
+              <Route path="/discover" element={<ErrorBoundary><DiscoveryPage /></ErrorBoundary>} />
+              <Route path="/prompts" element={<ErrorBoundary><PromptsPage /></ErrorBoundary>} />
+              <Route path="/chat" element={<ErrorBoundary><ChatPage /></ErrorBoundary>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

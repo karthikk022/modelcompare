@@ -18,11 +18,15 @@ AI Model Comparison Dashboard — discover, compare, and test AI models side-by-
 ## Quick Start
 
 ```bash
-npm install
-npm start
+npm install     # installs deps + builds React client
+npm run dev     # start server (client must already be built)
+npm start       # build client then start server (production)
 ```
 
 Open http://localhost:3001
+
+> `npm run dev` skips the client rebuild for faster iteration during development.
+> Run `npm run build:client` manually after pulling upstream changes to the React app.
 
 ## Configuration
 
