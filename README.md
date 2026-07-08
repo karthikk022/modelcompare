@@ -48,4 +48,26 @@ Copy `.env.example` to `.env` and edit:
 
 - **Backend:** Node.js, Express
 - **Database:** SQLite (better-sqlite3)
-- **Frontend:** HTML, CSS, JavaScript, Chart.js
+- **Frontend:** React, TypeScript, Chart.js
+
+## Project Structure
+
+```
+├── server.js            Express API server
+├── db.js                SQLite database layer
+├── routes/
+│   ├── auth.js          Auth middleware (API_KEY, CSRF)
+│   ├── models.js        Model CRUD with express-validator
+│   ├── prompts.js       Prompt testing via OpenRouter
+│   ├── analytics.js     Usage stats and web search
+│   ├── discovery.js     Model discovery (HF, OpenRouter)
+│   ├── settings.js      App settings with validation
+│   ├── benchmarks.js    Benchmark sync (curated, HF)
+│   └── utils.js         Shared helpers (pricing, search)
+├── client/              React SPA (canonical frontend)
+├── tests/               Test suite (Mocha + Supertest)
+├── .env.example         Environment variable docs
+├── render.yaml          Render deployment config
+├── fly.toml             Fly.io deployment config
+└── Dockerfile           Container build
+```

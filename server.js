@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const app = express();
 const db = require('./db');
 const { handle } = require('./routes/utils');
-const { requireAuth } = require('./routes/auth');
+const { requireAuth, requireCsrf } = require('./routes/auth');
 
 const PORT = process.env.PORT || 3001;
 
@@ -16,7 +16,6 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(cors(ALLOWED_ORIGINS.length > 0 ? { origin: ALLOWED_ORIGINS } : undefined));
-app.use(express.static('public'));
 app.use(express.json());
 
 const limiter = rateLimit({
@@ -46,10 +45,14 @@ require('./routes/discovery').register(app);
 require('./routes/settings').register(app);
 require('./routes/benchmarks').register(app);
 
-/* Auth guard for mutation endpoints: settings, model CRUD, snapshots */
+/* Auth + CSRF guards for mutation endpoints: settings, model CRUD, snapshots */
 app.use(/^\/(api\/settings|api\/models|api\/snapshot)/, (req, res, next) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return requireAuth(req, res, next);
-  next();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const fns = [requireAuth, requireCsrf];
+    let i = 0;
+    function run(err) { if (err) return next(err); const fn = fns[i++]; if (fn) fn(req, res, run); else next(); }
+    run();
+  } else next();
 });
 
 app.get('/api/health', handle(async (req, res) => {
@@ -69,23 +72,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-/*
- * Two frontend codebases exist: client/ (React SPA) and public/models.html (legacy SPA).
- * The React production build (client/dist/) takes priority when present.
- * Otherwise the legacy HTML frontend is served as a fallback.
- * To switch: `cd client && npm run build` to enable React; delete client/dist to revert.
- */
 const reactDistDir = path.join(__dirname, 'client', 'dist');
 const reactIndex = path.join(reactDistDir, 'index.html');
-const hasReact = require('fs').existsSync(reactIndex);
-if (hasReact) {
-  app.use(express.static(reactDistDir));
-  app.get(/^\/(?!api\/)/, (req, res) => res.sendFile(reactIndex));
-} else {
-  const modelsPage = path.join(__dirname, 'public', 'models.html');
-  app.get('/', (req, res) => res.sendFile(modelsPage));
-  app.get('/models', (req, res) => res.sendFile(modelsPage));
+if (!require('fs').existsSync(reactIndex)) {
+  console.error('React build not found at ' + reactIndex);
+  console.error('Run: cd client && npm install && npm run build');
+  process.exit(1);
 }
+app.use(express.static(reactDistDir));
+app.get(/^\/(?!api\/)/, (req, res) => res.sendFile(reactIndex));
 
 let server;
 const intervals = [];
