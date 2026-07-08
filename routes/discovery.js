@@ -1,5 +1,5 @@
 const db = require('../db');
-const { fetchLivePricing, hfFetch, stringToColor } = require('./utils');
+const { fetchLivePricing, hfFetch, stringToColor, handle } = require('./utils');
 
 const _SKIP_PATTERNS = /finetune|lora|merge|adapt|instruct|gguf|gptq|awq|bitsandbytes|fp16|fp8|int8|int4|mlx|ollama|trl|unsloth|test|tutorial|playground|scratch|sandbox|dpo|sft|rlhf|ppo|grpo|orpo|kto/i;
 
@@ -91,94 +91,102 @@ function estimateScores(inp, outp, ctxLen) {
 
 async function discoverFromHF(limit) {
   const list = await hfFetch('/models?pipeline_tag=text-generation&sort=downloads&direction=-1&limit=' + (limit * 2));
-  const results = [];
+  const candidates = [];
 
   for (const item of list) {
+    const author = item.id.split('/')[0] || 'unknown';
+    const cleaned = cleanModelName(item.id, author);
+    if (!cleaned || _SKIP_PATTERNS.test(item.id)) continue;
+    if ((item.likes || 0) < 10) continue;
+    candidates.push(item);
+  }
+
+  const CONCURRENCY = 5;
+  const results = [];
+
+  async function processItem(item) {
+    const author = item.id.split('/')[0] || 'unknown';
+    const cleaned = cleanModelName(item.id, author);
+    const full = await hfFetch('/models/' + item.id);
+    const desc = (full.cardData && (full.cardData.base_model || full.cardData.model_name || full.description)) || full.description || '';
+    const downloads = full.downloads || 0;
+    const pipeline = full.pipeline_tag || '';
+
+    let benchmarks = {};
     try {
-      const author = item.id.split('/')[0] || 'unknown';
-      const rawName = item.id.split('/').pop() || '';
-      const cleaned = cleanModelName(item.id, author);
-      if (!cleaned) continue;
-
-      if (_SKIP_PATTERNS.test(item.id)) continue;
-
-      const likes = item.likes || 0;
-      if (likes < 10) continue;
-
-      const full = await hfFetch('/models/' + item.id);
-      const desc = (full.cardData && (full.cardData.base_model || full.cardData.model_name || full.description)) || full.description || '';
-      const downloads = full.downloads || 0;
-      const pipeline = full.pipeline_tag || '';
-
-      let benchmarks = {};
-      try {
-        const evals = await hfFetch('/models/' + item.id + '/results');
-        if (Array.isArray(evals)) {
-          evals.forEach(e => {
-            if (e.type === 'open_llm_leaderboard') {
-              Object.entries(e.results || {}).forEach(([k, v]) => {
-                if (typeof v === 'number') {
-                  const kClean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-                  if (['mmlu','mmlu pro','mmlu-pro','math','math-500','gsm8k','bbh','ifeval','truthfulqa','gpqa','aime','livecodebench','hellaswag','simpleqa','bfcl','humaneval','human eval'].some(x => kClean.includes(x))) {
-                    benchmarks[k] = Math.round(v * 100) / 100;
-                  }
+      const evals = await hfFetch('/models/' + item.id + '/results');
+      if (Array.isArray(evals)) {
+        evals.forEach(e => {
+          if (e.type === 'open_llm_leaderboard') {
+            Object.entries(e.results || {}).forEach(([k, v]) => {
+              if (typeof v === 'number') {
+                const kClean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (['mmlu','mmlu pro','mmlu-pro','math','math-500','gsm8k','bbh','ifeval','truthfulqa','gpqa','aime','livecodebench','hellaswag','simpleqa','bfcl','humaneval','human eval'].some(x => kClean.includes(x))) {
+                  benchmarks[k] = Math.round(v * 100) / 100;
                 }
-              });
-            }
-          });
-        }
-      } catch (e) { /* skip */ }
-
-      let arch = 'Transformer';
-      let params = null;
-      try {
-        const config = await hfFetch('/models/' + item.id + '?expand[]=config');
-        if (config.config) {
-          const c = config.config;
-          if (c.model_type) arch = c.model_type;
-          if (c.num_parameters) params = (c.num_parameters / 1e9).toFixed(1) + 'B';
-          else if (c.num_hidden_layers && c.hidden_size && c.intermediate_size) {
-            const p = (c.num_hidden_layers * c.hidden_size * c.intermediate_size * 2) / 1e9;
-            if (p > 0.1) params = Math.round(p) + 'B (est.)';
+              }
+            });
           }
-        }
-      } catch (e) { /* skip */ }
-
-      const providerName = author.charAt(0).toUpperCase() + author.slice(1);
-      const elo = fuzzyMatchElo(cleaned, author);
-
-      results.push({
-        _source: 'hf',
-        id: author + '-' + cleaned.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-        name: cleaned,
-        provider: providerName,
-        family: providerName,
-        logo: providerName.charAt(0),
-        color: stringToColor(providerName),
-        releaseDate: item.createdAt ? item.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
-        description: (desc || '').slice(0, 500),
-        contextWindow: null,
-        outputLimit: null,
-        architecture: arch,
-        parameters: params,
-        inputPrice: null,
-        outputPrice: null,
-        speed: null,
-        arenaElo: elo,
-        scores: {},
-        benchmarks,
-        features: [],
-        bestFor: [],
-        strengths: '',
-        weaknesses: '',
-        tags: inferTags(cleaned, desc, benchmarks, arch),
-        likes,
-        downloads,
-        pipeline,
-      });
+        });
+      }
     } catch (e) { /* skip */ }
 
-    if (results.length >= limit) break;
+    let arch = 'Transformer';
+    let params = null;
+    try {
+      const config = await hfFetch('/models/' + item.id + '?expand[]=config');
+      if (config.config) {
+        const c = config.config;
+        if (c.model_type) arch = c.model_type;
+        if (c.num_parameters) params = (c.num_parameters / 1e9).toFixed(1) + 'B';
+        else if (c.num_hidden_layers && c.hidden_size && c.intermediate_size) {
+          const p = (c.num_hidden_layers * c.hidden_size * c.intermediate_size * 2) / 1e9;
+          if (p > 0.1) params = Math.round(p) + 'B (est.)';
+        }
+      }
+    } catch (e) { /* skip */ }
+
+    const providerName = author.charAt(0).toUpperCase() + author.slice(1);
+    const elo = fuzzyMatchElo(cleaned, author);
+
+    return {
+      _source: 'hf',
+      id: author + '-' + cleaned.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+      name: cleaned,
+      provider: providerName,
+      family: providerName,
+      logo: providerName.charAt(0),
+      color: stringToColor(providerName),
+      releaseDate: item.createdAt ? item.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+      description: (desc || '').slice(0, 500),
+      contextWindow: null,
+      outputLimit: null,
+      architecture: arch,
+      parameters: params,
+      inputPrice: null,
+      outputPrice: null,
+      speed: null,
+      arenaElo: elo,
+      scores: {},
+      benchmarks,
+      features: [],
+      bestFor: [],
+      strengths: '',
+      weaknesses: '',
+      tags: inferTags(cleaned, desc, benchmarks, arch),
+      likes: item.likes || 0,
+      downloads,
+      pipeline,
+    };
+  }
+
+  for (let i = 0; i < candidates.length && results.length < limit; i += CONCURRENCY) {
+    const batch = candidates.slice(i, i + CONCURRENCY).map(item => processItem(item).catch(() => null));
+    const batchResults = await Promise.all(batch);
+    for (const r of batchResults) {
+      if (r) results.push(r);
+      if (results.length >= limit) break;
+    }
   }
 
   results.sort((a, b) => (b.likes || 0) - (a.likes || 0));
@@ -238,7 +246,7 @@ async function discoverFromOpenRouter(limit) {
 
 function register(app) {
 
-  app.get('/api/discover', async (req, res) => {
+  app.get('/api/discover', handle(async (req, res) => {
     const limit = parseInt(req.query.limit) || 200;
     const source = req.query.source || 'all';
     try {
@@ -260,9 +268,9 @@ function register(app) {
     } catch (e) {
       res.status(500).json({ error: 'Discovery failed: ' + e.message });
     }
-  });
+  }));
 
-  app.get('/api/live-pricing', async (req, res) => {
+  app.get('/api/live-pricing', handle(async (req, res) => {
     const force = req.query.force === 'true';
     try {
       const data = await fetchLivePricing(force);
@@ -271,7 +279,7 @@ function register(app) {
     } catch (e) {
       res.status(500).json({ error: 'Live pricing failed: ' + e.message });
     }
-  });
+  }));
 }
 
 module.exports = { register };

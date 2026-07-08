@@ -94,4 +94,10 @@ function stringToColor(s) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-module.exports = { getOpenRouterApiKey, webSearch, findModelMatch, fetchLivePricing, hfFetch, stringToColor };
+function handle(handler) {
+  return async (req, res, next) => {
+    try { await handler(req, res, next); } catch (e) { next(e); }
+  };
+}
+
+module.exports = { getOpenRouterApiKey, webSearch, findModelMatch, fetchLivePricing, hfFetch, stringToColor, handle };

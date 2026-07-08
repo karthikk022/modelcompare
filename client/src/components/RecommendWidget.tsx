@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { recommendForTask } from '../api'
 import type { Model } from '../types'
 
+type RecommendModel = Model & { relevanceScore?: number }
+
 const QUICK_TASKS = ['coding', 'reasoning', 'multimodal', 'budget', 'fast', 'math', 'agentic', 'writing']
 
 export default function RecommendWidget({ onSelect }: { onSelect: (id: string) => void }) {
   const [task, setTask] = useState('')
-  const [results, setResults] = useState<Model[]>([])
+  const [results, setResults] = useState<RecommendModel[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -56,7 +58,7 @@ export default function RecommendWidget({ onSelect }: { onSelect: (id: string) =
                 <strong>{m.name}</strong>
                 <span className="text-dim" style={{ fontSize: '0.75rem' }}> {m.provider}</span>
               </div>
-              <span className="rec-score">{(m as any).score != null ? `${(m as any).score}%` : ''}</span>
+              <span className="rec-score">{m.relevanceScore != null ? `${m.relevanceScore}%` : ''}</span>
             </div>
           ))}
         </div>

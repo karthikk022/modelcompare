@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../db');
-const { hfFetch } = require('./utils');
+const { hfFetch, handle } = require('./utils');
 
 const BENCHMARKS_FILE = path.join(__dirname, '..', 'benchmarks-data', 'benchmarks.json');
 let _CURATED_BENCHMARKS = [];
@@ -88,7 +88,7 @@ function mergeBenchmarksIntoModel(model, entry) {
 
 function register(app) {
 
-  app.get('/api/refresh', async (req, res) => {
+  app.get('/api/refresh', handle(async (req, res) => {
     const models = await db.getAllModels();
     let updated = 0;
     for (const m of models) {
@@ -100,9 +100,9 @@ function register(app) {
       }
     }
     res.json({ message: 'Synced benchmark data from curated set for ' + updated + ' models', refreshed: updated });
-  });
+  }));
 
-  app.get('/api/benchmarks/sync', async (req, res) => {
+  app.get('/api/benchmarks/sync', handle(async (req, res) => {
     let models = await db.getAllModels();
     let checked = 0, updated = 0;
     const results = [];
@@ -178,7 +178,7 @@ function register(app) {
     if (updated > 0) await db.snapshotAllModels('benchmark-sync');
 
     res.json({ message: 'Checked ' + checked + ' models, updated ' + updated, checked, updated, results });
-  });
+  }));
 }
 
 module.exports = { register };

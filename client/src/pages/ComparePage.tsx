@@ -15,15 +15,20 @@ const COMPARE_FIELDS = [
   { key: 'architecture', label: 'Architecture' },
 ] as const
 
+type CompareFieldKey = typeof COMPARE_FIELDS[number]['key']
+
 const BENCH_ORDER = ['mmlu-pro', 'gpqa diamond', 'swe-bench verified', 'aime', 'livecodebench', 'math-500', 'gsm8k', 'bbh', 'hellaswag', 'simpleqa', 'bfcl'] as const
 
-function val(m: Model, key: string): any {
+function val(m: Model, key: CompareFieldKey): string {
   if (key === 'inputPrice') return m.inputPrice != null ? `$${m.inputPrice.toFixed(2)}/M` : '-'
   if (key === 'outputPrice') return m.outputPrice != null ? `$${m.outputPrice.toFixed(2)}/M` : '-'
   if (key === 'contextWindow') return m.contextWindow?.toLocaleString() ?? '-'
   if (key === 'speed') return m.speed != null ? `${m.speed} tok/s` : '-'
-  if (key === 'arenaElo') return m.arenaElo ?? '-'
-  return (m as any)[key] ?? '-'
+  if (key === 'arenaElo') return m.arenaElo != null ? String(m.arenaElo) : '-'
+  if (key === 'parameters') return m.parameters ?? '-'
+  if (key === 'outputLimit') return m.outputLimit?.toLocaleString() ?? '-'
+  if (key === 'architecture') return m.architecture ?? '-'
+  return '-'
 }
 
 export default function ComparePage() {

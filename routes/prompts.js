@@ -1,9 +1,9 @@
 const db = require('../db');
-const { getOpenRouterApiKey, webSearch, fetchLivePricing, findModelMatch } = require('./utils');
+const { getOpenRouterApiKey, webSearch, fetchLivePricing, findModelMatch, handle } = require('./utils');
 
 function register(app) {
 
-  app.post('/api/test-prompt', async (req, res) => {
+  app.post('/api/test-prompt', handle(async (req, res) => {
     const { models: modelIds, prompt, systemPrompt, maxTokens, temperature, messages, webSearch: useWebSearch } = req.body;
     if (!modelIds || !Array.isArray(modelIds) || modelIds.length < 1) return res.status(400).json({ error: 'models array required (min 1)' });
 
@@ -157,9 +157,9 @@ function register(app) {
     }
 
     res.json({ results, prompt });
-  });
+  }));
 
-  app.post('/api/test-prompt-stream', async (req, res) => {
+  app.post('/api/test-prompt-stream', handle(async (req, res) => {
     const { models: modelIds, messages, maxTokens, temperature, webSearch: useWebSearch } = req.body;
     if (!modelIds || !Array.isArray(modelIds) || modelIds.length < 1) return res.status(400).json({ error: 'models array required' });
 
@@ -220,6 +220,10 @@ function register(app) {
       'X-Accel-Buffering': 'no',
     });
 
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 120000);
+    req.on('close', () => { ac.abort(); clearTimeout(timeout); if (!res.writableEnded) res.end(); });
+
     try {
       const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -230,7 +234,7 @@ function register(app) {
           'X-Title': 'ModelCompare',
         },
         body: JSON.stringify({ model: slug, messages: msgs, max_tokens: maxT, temperature: temp, stream: true }),
-        signal: AbortSignal.timeout(120000),
+        signal: ac.signal,
       });
 
       if (!orRes.ok) {
@@ -300,7 +304,7 @@ function register(app) {
       res.write('data: ' + JSON.stringify({ type: 'error', message: e.name === 'AbortError' ? model.name + ' timed out (60s)' : e.message, latency }) + '\n\n');
     }
     res.end();
-  });
+  }));
 }
 
 module.exports = { register };

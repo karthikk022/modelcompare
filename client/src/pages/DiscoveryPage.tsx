@@ -3,8 +3,10 @@ import type { Model } from '../types'
 import { discoverModels, addModelFromDiscovery } from '../api'
 import ModelDetail from '../components/ModelDetail'
 
+type DiscoveryModel = Model & { _source: string; likes?: number; downloads?: number; _alreadyAdded?: boolean }
+
 export default function DiscoveryPage() {
-  const [models, setModels] = useState<(Model & { _source: string; likes?: number; downloads?: number; _alreadyAdded?: boolean })[]>([])
+  const [models, setModels] = useState<DiscoveryModel[]>([])
   const [source, setSource] = useState('all')
   const [loading, setLoading] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -14,13 +16,13 @@ export default function DiscoveryPage() {
     setLoading(true); setMsg('')
     try {
       const data = await discoverModels(source, 50)
-      setModels(data.models as any)
+      setModels(data.models)
       if (data.models.length === 0) setMsg('No new models found.')
     } catch { setMsg('Discovery failed.') }
     setLoading(false)
   }
 
-  async function doAdd(m: Model & { _source?: string; likes?: number; downloads?: number; _alreadyAdded?: boolean }) {
+  async function doAdd(m: DiscoveryModel) {
     try {
       await addModelFromDiscovery(m)
       setMsg(`Added ${m.name}`)
@@ -38,7 +40,7 @@ export default function DiscoveryPage() {
     setMsg(`Added ${count} models`)
   }
 
-  const selected = models.find(m => m.id === selectedId) as any
+  const selected = models.find(m => m.id === selectedId) ?? null
 
   return (
     <div className="discovery-page">
@@ -77,13 +79,13 @@ export default function DiscoveryPage() {
               </div>
               <h3>{m.name}</h3>
               <div className="provider">{m.provider}</div>
-              {(m as any).tags?.length > 0 && (
+              {m.tags?.length > 0 && (
                 <div className="scores">
-                  {(m as any).tags.slice(0, 4).map((t: string) => <span key={t} className="score-pill">{t}</span>)}
+                  {m.tags.slice(0, 4).map((t: string) => <span key={t} className="score-pill">{t}</span>)}
                 </div>
               )}
               <div className="card-footer">
-                <span>{(m as any).likes != null ? `\u2764 ${(m as any).likes}` : ''}</span>
+                <span>{m.likes != null ? `\u2764 ${m.likes}` : ''}</span>
                 <span>{m.arenaElo ? `${m.arenaElo} ELO` : ''}</span>
               </div>
             </div>

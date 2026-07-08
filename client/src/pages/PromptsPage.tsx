@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Model } from '../types'
 import { fetchModels, testPrompt, getUsage } from '../api'
 import { UsageChart } from '../components/Charts'
+import type { PromptResult } from '../api'
 
 export default function PromptsPage() {
   const [models, setModels] = useState<Model[]>([])
@@ -11,9 +12,9 @@ export default function PromptsPage() {
   const [maxTokens, setMaxTokens] = useState(1024)
   const [temperature, setTemperature] = useState(0.7)
   const [webSearch, setWebSearch] = useState(false)
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<PromptResult['results']>([])
   const [loading, setLoading] = useState(false)
-  const [usage, setUsage] = useState<any[]>([])
+  const [usage, setUsage] = useState<Awaited<ReturnType<typeof getUsage>>>([])
   const [tab, setTab] = useState<'test' | 'history'>('test')
 
   useEffect(() => { fetchModels().then(m => setModels(m)) }, [])
@@ -27,7 +28,7 @@ export default function PromptsPage() {
     try {
       const data = await testPrompt(selectedIds, prompt, systemPrompt, maxTokens, temperature, webSearch)
       setResults(data.results)
-    } catch { setResults([{ id: 'error', name: 'Error', error: 'Request failed' }]) }
+    } catch { setResults([{ id: 'error', name: 'Error', content: null, finishReason: null, latency: 0, inTokens: 0, outTokens: 0, cost: null, error: 'Request failed' }]) }
     setLoading(false)
   }
 
@@ -130,10 +131,10 @@ export default function PromptsPage() {
                 {usage.slice(0, 100).map(u => (
                   <tr key={u.id}>
                     <td>{u.modelName}</td>
-                    <td>{(u as any).totalTokens?.toLocaleString() ?? '-'}</td>
-                    <td>${(u as any).cost?.toFixed(4) ?? '0'}</td>
-                    <td>{(u as any).latencyMs ?? '-'}ms</td>
-                    <td className="text-dim">{(u as any).timestamp?.slice(0, 10) ?? ''}</td>
+                    <td>{u.totalTokens?.toLocaleString() ?? '-'}</td>
+                    <td>${u.cost?.toFixed(4) ?? '0'}</td>
+                    <td>{u.latencyMs ?? '-'}ms</td>
+                    <td className="text-dim">{u.timestamp?.slice(0, 10) ?? ''}</td>
                   </tr>
                 ))}
               </tbody>

@@ -357,18 +357,19 @@ api.getAllChanges = async () => {
     const current = stmts.getById.get(row.model_id);
     if (!current) continue;
     const prev = { inputPrice: row.input_price, outputPrice: row.output_price, speed: row.speed, arenaElo: row.arena_elo, benchmarks: safeJson(row.benchmarks, {}), snapshotAt: row.snapshot_at, scores: safeJson(row.scores, {}) };
+    const cur = { inputPrice: current.input_price, outputPrice: current.output_price, speed: current.speed, arenaElo: current.arena_elo, benchmarks: safeJson(current.benchmarks, {}), scores: safeJson(current.scores, {}) };
     const changes = {};
     for (const key of ['inputPrice', 'outputPrice', 'speed', 'arenaElo']) {
-      if (current[key] != null && prev[key] != null && Math.abs(current[key] - prev[key]) > 0.001) {
-        changes[key] = { from: prev[key], to: current[key], diff: current[key] - prev[key] };
+      if (cur[key] != null && prev[key] != null && Math.abs(cur[key] - prev[key]) > 0.001) {
+        changes[key] = { from: prev[key], to: cur[key], diff: cur[key] - prev[key] };
       }
     }
-    const benchKeys = [...new Set([...Object.keys(current.benchmarks || {}), ...Object.keys(prev.benchmarks)])];
+    const benchKeys = [...new Set([...Object.keys(cur.benchmarks), ...Object.keys(prev.benchmarks)])];
     for (const k of benchKeys) {
-      const cur = current.benchmarks && current.benchmarks[k];
-      const old = prev.benchmarks && prev.benchmarks[k];
-      if (cur != null && old != null && Math.abs(cur - old) > 0.01) {
-        changes['bench_' + k] = { from: old, to: cur, diff: cur - old };
+      const cv = cur.benchmarks[k];
+      const ov = prev.benchmarks[k];
+      if (cv != null && ov != null && Math.abs(cv - ov) > 0.01) {
+        changes['bench_' + k] = { from: ov, to: cv, diff: cv - ov };
       }
     }
     if (Object.keys(changes).length) {
@@ -378,6 +379,15 @@ api.getAllChanges = async () => {
   return result;
 };
 api.logUsage = async (entry) => stmts.logUsage.run(entry);
+api.getUsageLogs = async (days) => {
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+  return stmts.getUsageStats.all(since).map(r => ({
+    id: r.id, modelId: r.model_id, modelName: r.model_name,
+    totalTokens: r.total_tokens, cost: r.cost, latencyMs: r.latency_ms,
+    promptTokens: r.prompt_tokens, completionTokens: r.completion_tokens,
+    finishReason: r.finish_reason, timestamp: r.created_at,
+  }));
+};
 api.getUsageStats = async (days) => {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const rows = stmts.getUsageStats.all(since);

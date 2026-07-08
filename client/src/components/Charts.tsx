@@ -72,7 +72,7 @@ export function RadarChart({ models }: Props) {
         labels: keys,
         datasets: models.map((m, i) => ({
           label: m.name,
-          data: keys.map(k => (m.scores as any)?.[k] ?? 0),
+          data: keys.map(k => m.scores?.[k] ?? 0),
           backgroundColor: BENCH_COLORS[i % BENCH_COLORS.length] + '33',
           borderColor: BENCH_COLORS[i % BENCH_COLORS.length],
           borderWidth: 2,
