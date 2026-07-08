@@ -6,3 +6,4 @@ data/*.db-shm
 .env
 client/dist/
 client/node_modules/
+dist-server/

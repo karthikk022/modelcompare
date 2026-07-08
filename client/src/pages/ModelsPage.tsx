@@ -11,6 +11,7 @@ import { useTheme } from '../App'
 const PAGE_SIZE = 50;
 
 export default function ModelsPage() {
+  const { theme, toggleTheme } = useTheme()
   const [models, setModels] = useState<Model[]>([])
   const [total, setTotal] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
