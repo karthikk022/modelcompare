@@ -5,8 +5,8 @@ services:
     repo: https://github.com/karthikk022/modelcompare
     plan: free
     region: oregon
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm install && npm run build
+    startCommand: node dist-server/server.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
