@@ -24,6 +24,19 @@ npm start
 
 Open http://localhost:3001
 
+## Configuration
+
+Copy `.env.example` to `.env` and edit:
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PORT` | No | `3001` | Server port |
+| `API_KEY` | **For production** | unset | Shared secret for write access. **Must be set when deploying publicly.** When unset, all endpoints are open (suitable for local/personal use only). |
+| `ALLOWED_ORIGINS` | **For production** | `http://localhost:3001,http://localhost:5173` | Comma-separated CORS origins. In production, set to your frontend domain(s). If empty in production, CORS falls back to open (not recommended). |
+| `OPENROUTER_API_KEY` | No | unset | Default key for prompt testing. Users can also bring their own via `x-openrouter-key` header. |
+
+> **⚠️ Production warning:** Auth is **opt-in**. Without `API_KEY`, any write endpoint (`POST/PUT/DELETE /api/models`, `/api/settings`, `/api/snapshot`) is open to anyone who can reach the server. Always set `API_KEY` and `ALLOWED_ORIGINS` when deploying publicly.
+
 ## Deploy
 
 | Platform | Config | Notes |

@@ -1,10 +1,17 @@
+const crypto = require('crypto');
 const AUTH_HEADER = 'x-api-key';
+
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 function requireAuth(req, res, next) {
   const apiKey = process.env.API_KEY || null;
   if (!apiKey) return next();
   const provided = req.headers[AUTH_HEADER] || req.headers['authorization']?.replace(/^Bearer\s+/i, '');
-  if (provided === apiKey) return next();
+  if (provided && timingSafeEqual(provided, apiKey)) return next();
   return res.status(401).json({ error: 'Unauthorized — provide x-api-key header or set API_KEY env var' });
 }
 
