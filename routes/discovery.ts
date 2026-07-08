@@ -1,7 +1,12 @@
+const fs = require('fs');
+const path = require('path');
 const db = require('../db');
 const { fetchLivePricing, hfFetch, stringToColor, handle } = require('./utils');
 
-const _SKIP_PATTERNS = /finetune|lora|merge|adapt|instruct|gguf|gptq|awq|bitsandbytes|fp16|fp8|int8|int4|mlx|ollama|trl|unsloth|test|tutorial|playground|scratch|sandbox|dpo|sft|rlhf|ppo|grpo|orpo|kto/i;
+const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const _ELO_LOOKUP = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'benchmarks-data', 'elo-lookup.json'), 'utf8'));
+
+const _SKIP_PATTERNS = /\bfinetune\b|\blora\b|\bmerge\b|\badapt\b|\binstruct\b|\bgguf\b|\bgptq\b|\bawq\b|\bbitsandbytes\b|\bfp16\b|\bfp8\b|\bint8\b|\bint4\b|\bmlx\b|\bollama\b|\btrl\b|\bunsloth\b|\btest\b|\btutorial\b|\bplayground\b|\bscratch\b|\bsandbox\b|\bdpo\b|\bsft\b|\brlhf\b|\bppo\b|\bgrpo\b|\borpo\b|\bkto\b/i;
 
 const _CLEAN_SUFFIXES = [
   /-instruct$/i, /-chat$/i, /-it$/i, /-sft$/i, /-dpo$/i,
@@ -9,25 +14,6 @@ const _CLEAN_SUFFIXES = [
   /-vllm$/i, /-merge$/i, /-merged$/i,
   /-v\d+(\.\d+)?$/i,
   /-\d+b$/i,
-];
-
-const _ELO_LOOKUP = [
-  ['gpt-5', 1468], ['gpt-4', 1350], ['gpt-4o', 1420], ['gpt-4-turbo', 1380],
-  ['claude-3', 1380], ['claude-3.5', 1410], ['claude-3-opus', 1430], ['claude-3-sonnet', 1390],
-  ['gemini-2', 1360], ['gemini-2.5', 1410], ['gemini-2-flash', 1380],
-  ['llama-3', 1290], ['llama-3.1', 1320], ['llama-3.2', 1300], ['llama-3.3', 1340], ['llama-4', 1370],
-  ['mistral', 1260], ['mistral-large', 1360], ['mixtral', 1300],
-  ['deepseek-v2', 1310], ['deepseek-v3', 1380], ['deepseek-r1', 1420],
-  ['qwen-2', 1300], ['qwen-2.5', 1340], ['qwen-3', 1390],
-  ['yi-', 1250], ['yi-large', 1300], ['yi-lightning', 1280],
-  ['command-r', 1270], ['command-r-plus', 1320],
-  ['phi-3', 1240], ['phi-4', 1300],
-  ['nemotron', 1280],
-  ['grok-2', 1350], ['grok-3', 1410],
-  ['glm-4', 1320], ['glm-5', 1400],
-  ['kimi', 1390],
-  ['qwq', 1420],
-  ['sarvam', 1250],
 ];
 
 function cleanModelName(raw, author) {
@@ -41,7 +27,7 @@ function cleanModelName(raw, author) {
 
 function fuzzyMatchElo(name, author) {
   const lower = (author + '/' + name).toLowerCase();
-  for (const [key, elo] of _ELO_LOOKUP) {
+  for (const { key, elo } of _ELO_LOOKUP) {
     if (lower.includes(key)) return elo;
   }
   return null;
@@ -129,7 +115,7 @@ async function discoverFromHF(limit) {
           }
         });
       }
-    } catch (e) { /* skip */ }
+    } catch (e) { console.warn('[discover] HF results fetch failed:', e.message); }
 
     let arch = 'Transformer';
     let params = null;
@@ -144,7 +130,7 @@ async function discoverFromHF(limit) {
           if (p > 0.1) params = Math.round(p) + 'B (est.)';
         }
       }
-    } catch (e) { /* skip */ }
+    } catch (e) { console.warn('[discover] HF config fetch failed:', e.message); }
 
     const providerName = author.charAt(0).toUpperCase() + author.slice(1);
     const elo = fuzzyMatchElo(cleaned, author);
@@ -196,7 +182,7 @@ async function discoverFromHF(limit) {
 async function discoverFromOpenRouter(limit) {
   const url = 'https://openrouter.ai/api/v1/models';
   const res = await fetch(url, { headers: { 'User-Agent': 'ModelCompare/1.0' }, signal: AbortSignal.timeout(15000) });
-  const body = await res.json();
+  const body = await res.json() as any;
   const items = (body.data || []).slice(0, Math.min(limit, 500));
   const results = [];
   for (const item of items) {
@@ -239,7 +225,7 @@ async function discoverFromOpenRouter(limit) {
         pipeline: 'text-generation',
         openRouterSlug: item.id,
       });
-    } catch (e) { /* skip */ }
+    } catch (e) { console.warn('[discover] OpenRouter item failed:', e.message); }
   }
   return results;
 }

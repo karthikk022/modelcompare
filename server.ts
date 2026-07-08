@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
@@ -19,14 +20,26 @@ app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false 
 app.use(cors(ALLOWED_ORIGINS.length > 0 ? { origin: ALLOWED_ORIGINS } : undefined));
 app.use(express.json());
 
-const limiter = rateLimit({
+const readLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests — try again in a minute' },
+  message: { error: 'Too many read requests — try again in a minute' },
 });
-app.use('/api', limiter);
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many write requests — try again in a minute' },
+});
+
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return writeLimiter(req, res, next);
+  readLimiter(req, res, next);
+});
 
 app.use('/api', (req, res, next) => {
   const start = Date.now();
@@ -50,9 +63,9 @@ require('./routes/events').register(app);
 /* Auth + CSRF guards for mutation endpoints: settings, model CRUD, snapshots */
 app.use(/^\/(api\/settings|api\/models|api\/snapshot)/, (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    const fns = [requireAuth, requireCsrf];
+    const fns: any[] = [requireAuth, requireCsrf];
     let i = 0;
-    function run(err) { if (err) return next(err); const fn = fns[i++]; if (fn) fn(req, res, run); else next(); }
+    function run(err?: any) { if (err) return next(err); const fn = fns[i++]; if (fn) fn(req, res, run); else next(); }
     run();
   } else next();
 });
@@ -74,13 +87,9 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const reactDistDir = path.join(__dirname, 'client', 'dist');
+const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const reactDistDir = path.join(PROJECT_ROOT, 'client', 'dist');
 const reactIndex = path.join(reactDistDir, 'index.html');
-if (!require('fs').existsSync(reactIndex)) {
-  console.error('React build not found at ' + reactIndex);
-  console.error('Run: cd client && npm install && npm run build');
-  process.exit(1);
-}
 app.use(express.static(reactDistDir));
 app.get(/^\/(?!api\/)/, (req, res) => res.sendFile(reactIndex));
 
@@ -90,7 +99,7 @@ const intervals = [];
 process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
 process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
 process.on('uncaughtException', (err) => { console.error('[FATAL]', err); process.exit(1); });
-process.on('unhandledRejection', (reason) => { console.error('[FATAL] Unhandled rejection:', reason); });
+process.on('unhandledRejection', (reason) => { console.error('[FATAL] Unhandled rejection:', reason); process.exit(1); });
 
 async function gracefulShutdown(signal) {
   console.log('Shutting down on ' + signal + '...');
@@ -101,6 +110,11 @@ async function gracefulShutdown(signal) {
 
 async function start() {
   await db.migrateFromJson();
+  if (!require('fs').existsSync(reactIndex)) {
+    console.log('React build not found — building client...');
+    const { execSync } = require('child_process');
+    execSync('npm run build:client', { cwd: __dirname, stdio: 'inherit' });
+  }
   server = app.listen(PORT, '0.0.0.0', async () => {
     console.log('AI Model Compare running on http://localhost:' + PORT);
     console.log('Press Ctrl+C to stop');
@@ -116,10 +130,11 @@ async function start() {
     intervals.push(setInterval(async () => {
       const changes = await db.getAllChanges();
       if (!changes.length) return;
-      const sig = changes.filter(c => {
+      const sig = changes.filter((c: any) => {
         return Object.entries(c.changes).some(([k, v]) => {
-          if (k.startsWith('bench_') && Math.abs(v.diff) > 2) return true;
-          if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(v.diff) > 0.5;
+          const diff = (v as any).diff;
+          if (k.startsWith('bench_') && Math.abs(diff) > 2) return true;
+          if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(diff) > 0.5;
           return false;
         });
       });

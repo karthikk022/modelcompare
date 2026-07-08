@@ -26,7 +26,7 @@ async function webSearch(query) {
     const res = await fetch('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent(query) + '&srlimit=5&format=json&origin=*', {
       headers: { 'User-Agent': 'ModelCompare/1.0' }
     });
-    const data = await res.json();
+    const data = await res.json() as any;
     if (!data.query || !data.query.search) return [];
     return data.query.search.map(r => ({
       title: r.title.substring(0, 120),
@@ -65,7 +65,7 @@ async function fetchLivePricing(force) {
     const url = OR_API + '/api/v1/models';
     const res = await fetch(url, { headers: { 'User-Agent': 'ModelCompare/1.0' }, signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error('OR ' + res.status);
-    const body = await res.json();
+    const body = await res.json() as any;
     const orModels = body.data || [];
     const ourModels = await db.getAllModels();
     const result = { fetchedAt: new Date().toISOString(), source: 'openrouter', models: {} };

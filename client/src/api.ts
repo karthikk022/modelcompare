@@ -24,8 +24,8 @@ export async function createModel(m: Partial<Model>): Promise<Model> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(m),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to create model'); }
-  const data = await res.json();
+  if (!res.ok) { const e = await res.json() as any; throw new Error(e.error || 'Failed to create model'); }
+  const data = await res.json() as any;
   return data.model;
 }
 
@@ -35,15 +35,15 @@ export async function updateModel(id: string, m: Partial<Model>): Promise<Model>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(m),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to update model'); }
-  const data = await res.json();
+  if (!res.ok) { const e = await res.json() as any; throw new Error(e.error || 'Failed to update model'); }
+  const data = await res.json() as any;
   return data.model;
 }
 
 export async function compareModels(ids: string[]): Promise<Model[]> {
   const res = await fetch(`${BASE}/compare?ids=${ids.map(encodeURIComponent).join(',')}`);
   if (!res.ok) throw new Error('Failed to compare models');
-  const data = await res.json();
+  const data = await res.json() as any;
   return data.models;
 }
 
@@ -55,7 +55,7 @@ export async function recommendForTask(task: string): Promise<{ models: Model[] 
 
 export async function deleteModel(id: string): Promise<void> {
   const res = await fetch(`${BASE}/models/${id}`, { method: 'DELETE' });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed to delete'); }
+  if (!res.ok) { const e = await res.json() as any; throw new Error(e.error || 'Failed to delete'); }
 }
 
 export interface DiscoveryResult {
@@ -100,7 +100,7 @@ export async function testPrompt(models: string[], prompt: string, systemPrompt?
 export async function getUsage(): Promise<{ id: number; modelId: string; modelName: string; totalTokens: number; cost: number; latencyMs: number; timestamp: string }[]> {
   const res = await fetch(`${BASE}/usage/history`);
   if (!res.ok) throw new Error('Failed to fetch usage history');
-  const data = await res.json();
+  const data = await res.json() as any;
   return data.usage || [];
 }
 
@@ -108,6 +108,13 @@ export async function getSettings(): Promise<Record<string, string>> {
   const res = await fetch(`${BASE}/settings`);
   if (!res.ok) throw new Error('Failed to fetch settings');
   return res.json();
+}
+
+export async function fetchProviders(): Promise<string[]> {
+  const res = await fetch(`${BASE}/providers`);
+  if (!res.ok) throw new Error('Failed to fetch providers');
+  const data = await res.json() as any;
+  return data.providers;
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {

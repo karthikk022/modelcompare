@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Model } from '../types'
-import { fetchModels, deleteModel, exportModels } from '../api'
+import { fetchModels, deleteModel, exportModels, fetchProviders } from '../api'
 import ModelCard from '../components/ModelCard'
 import ModelDetail from '../components/ModelDetail'
 import ModelForm from '../components/ModelForm'
@@ -22,8 +22,10 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState<Model | null | true>(null)
   const [showSettings, setShowSettings] = useState(false)
-  const { theme, toggleTheme } = useTheme()
+  const [providers, setProviders] = useState<string[]>([])
   const fetchId = useRef(0)
+
+  useEffect(() => { fetchProviders().then(setProviders).catch(() => {}) }, [])
 
   const filterKey = search + '|' + providerFilter + '|' + sort
 
@@ -88,7 +90,7 @@ export default function ModelsPage() {
           <input type="text" placeholder="Search models..." value={search} onChange={e => setSearch(e.target.value)} className="search-input" />
           <select value={providerFilter} onChange={e => setProviderFilter(e.target.value)} className="filter-select">
             <option value="">All providers</option>
-            {['OpenAI', 'Anthropic', 'Google', 'Meta', 'Mistral', 'DeepSeek', 'Qwen', 'Other'].map(p => <option key={p} value={p}>{p}</option>)}
+            {providers.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
           <select value={sort} onChange={e => setSort(e.target.value)} className="filter-select">
             <option value="-arenaElo">ELO (high first)</option>

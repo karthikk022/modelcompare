@@ -60,6 +60,12 @@ function fillDefaults(model) {
 
 function register(app) {
 
+  app.get('/api/providers', handle(async (req, res) => {
+    const models = await db.getAllModels();
+    const providers = [...new Set(models.map(m => m.provider).filter(Boolean))].sort();
+    res.json({ providers });
+  }));
+
   app.get('/api/models', handle(async (req, res) => {
     let models = await db.getAllModels();
     const q = (req.query.q || '').toLowerCase().trim();
@@ -68,7 +74,7 @@ function register(app) {
     if (q) models = models.filter(m => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q) || (m.tags || []).some(t => t.toLowerCase().includes(q)));
     if (provider) models = models.filter(m => (m.provider || '').toLowerCase().includes(provider));
     if (tag) models = models.filter(m => (m.tags || []).some(t => t.toLowerCase() === tag));
-    const sort = (req.query.sort || '').toLowerCase().trim();
+    const sort = (req.query.sort || '').trim();
     if (sort) {
       const desc = sort.startsWith('-');
       const field = desc ? sort.slice(1) : sort;
@@ -88,8 +94,8 @@ function register(app) {
     const models = await db.getAllModels();
     const format = req.query.format || 'json';
     if (format === 'csv') {
-      const allBenchKeys = [...new Set(models.flatMap(m => Object.keys(m.benchmarks || {})))].sort();
-      const allScoreKeys = [...new Set(models.flatMap(m => Object.keys(m.scores || {})))].sort();
+      const allBenchKeys = [...new Set(models.flatMap((m: any) => Object.keys(m.benchmarks || {})))].sort() as string[];
+      const allScoreKeys = [...new Set(models.flatMap((m: any) => Object.keys(m.scores || {})))].sort() as string[];
       const cols = ['id','name','provider','family','architecture','parameters','inputPrice','outputPrice','speed','arenaElo','contextWindow','releaseDate', ...allBenchKeys.map(k => 'bench_' + k.replace(/[^a-z0-9]/gi,'_')), ...allScoreKeys.map(k => 'score_' + k), 'tags'];
       const esc = v => { if(v == null) return ''; const s = String(v).replace(/^[=+\-@]/, "'$&"); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
       const rows = models.map(m => cols.map(c => {
@@ -200,7 +206,7 @@ function register(app) {
       if (m.scores) {
         for (const [cat, val] of Object.entries(m.scores)) {
           const catWords = cat.replace(/([A-Z])/g, ' $1').toLowerCase();
-          if (taskWords.some(w => catWords.includes(w))) score += val / 100;
+          if (taskWords.some(w => catWords.includes(w))) score += (val as number) / 100;
         }
       }
       return { ...m, relevanceScore: Math.round(score * 10) / 10 };

@@ -16,6 +16,7 @@ app.use(express.json());
 require('../routes/models').register(app);
 require('../routes/analytics').register(app);
 require('../routes/benchmarks').register(app);
+require('../routes/events').register(app);
 
 app.get('/api/health', async (req, res) => {
   const models = await db.getAllModels();
@@ -39,7 +40,7 @@ describe('API Routes', function () {
   });
 
   after(async function () {
-    try { await db.deleteModel('test-api-model'); } catch (e) { /* skip */ }
+    try { await db.deleteModel('test-api-model'); } catch (e) { console.warn('[test] cleanup failed:', e.message); }
   });
 
   describe('GET /api/health', function () {
@@ -269,6 +270,130 @@ describe('API Routes', function () {
         .get('/api/models')
         .expect(200)
         .end(done);
+    });
+  });
+
+  describe('GET /api/providers', function () {
+    it('should return a sorted list of providers', function (done) {
+      request(app)
+        .get('/api/providers')
+        .expect(200)
+        .expect(function (res) {
+          if (!Array.isArray(res.body.providers)) throw new Error('Expected providers array');
+          const sorted = [...res.body.providers].sort();
+          if (JSON.stringify(res.body.providers) !== JSON.stringify(sorted)) throw new Error('Expected sorted providers');
+        })
+        .end(done);
+    });
+  });
+
+  describe('GET /api/models — search/filter/sort/pagination', function () {
+    before(function (done) {
+      // ensure a known model exists for filtering tests
+      request(app)
+        .post('/api/models')
+        .send({ id: 'search-test-model', name: 'Search Test Model', provider: 'TestSearch', arenaElo: 1200, inputPrice: 5 })
+        .expect(201)
+        .end(done);
+    });
+
+    it('should filter by ?q=', function (done) {
+      request(app)
+        .get('/api/models?q=Search+Test')
+        .expect(200)
+        .expect(function (res) {
+          if (res.body.models.length === 0) throw new Error('Expected at least one match');
+          if (!res.body.models.every(m => m.name.toLowerCase().includes('search test') || m.id.toLowerCase().includes('search test'))) throw new Error('Expected all results to match query');
+        })
+        .end(done);
+    });
+
+    it('should filter by ?provider=', function (done) {
+      request(app)
+        .get('/api/models?provider=TestSearch')
+        .expect(200)
+        .expect(function (res) {
+          if (res.body.models.length === 0) throw new Error('Expected at least one match');
+          if (!res.body.models.every(m => m.provider === 'TestSearch')) throw new Error('Expected all results to match provider');
+        })
+        .end(done);
+    });
+
+    it('should sort by ?sort=name', function (done) {
+      request(app)
+        .get('/api/models?sort=name')
+        .expect(200)
+        .expect(function (res) {
+          const names = res.body.models.filter(m => m.name).map(m => m.name.toLowerCase());
+          const sorted = [...names].sort();
+          if (JSON.stringify(names) !== JSON.stringify(sorted)) throw new Error('Expected ascending sort by name');
+        })
+        .end(done);
+    });
+
+    it('should sort ascending with ?sort=arenaElo', function (done) {
+      request(app)
+        .get('/api/models?sort=arenaElo')
+        .expect(200)
+        .expect(function (res) {
+          const elos = res.body.models
+            .filter(m => m.arenaElo != null && typeof m.arenaElo === 'number')
+            .map(m => m.arenaElo);
+          if (elos.length < 2) {
+            // skip assertion if fewer than 2 numeric ELOS — still test that at least the test model appears with right provider
+            const testModel = res.body.models.find(m => m.id === 'search-test-model');
+            if (!testModel) throw new Error('Expected search-test-model in results');
+            if (testModel.arenaElo !== 1200) throw new Error('Expected arenaElo 1200');
+            return;
+          }
+          for (let i = 1; i < elos.length; i++) {
+            if (elos[i] < elos[i - 1]) throw new Error('Expected ascending ELO sort, got ' + elos[i] + ' after ' + elos[i - 1]);
+          }
+        })
+        .end(done);
+    });
+
+    it('should paginate with ?limit= and ?offset=', function (done) {
+      request(app)
+        .get('/api/models?limit=1&offset=0')
+        .expect(200)
+        .expect(function (res) {
+          if (res.body.models.length > 1) throw new Error('Expected at most 1 model');
+          if (typeof res.body.total !== 'number') throw new Error('Expected total count');
+          if (typeof res.body.count !== 'number') throw new Error('Expected count');
+        })
+        .end(done);
+    });
+
+    it('should return total regardless of pagination', function (done) {
+      request(app)
+        .get('/api/models?limit=1')
+        .expect(200)
+        .expect(function (res) {
+          if (res.body.total < res.body.count) throw new Error('Expected total >= count');
+        })
+        .end(done);
+    });
+
+    after(function (done) {
+      request(app).delete('/api/models/search-test-model').end(() => done());
+    });
+  });
+
+  describe('GET /api/events SSE endpoint', function () {
+    it('should return 200 with text/event-stream content type', function (done) {
+      const srv = app.listen(0, function () {
+        const port = srv.address().port;
+        const http = require('http');
+        const req = http.get('http://localhost:' + port + '/api/events', function (res) {
+          if (res.statusCode !== 200) { srv.close(); return done(new Error('Expected 200, got ' + res.statusCode)); }
+          if (!/text\/event-stream/.test(res.headers['content-type'])) { srv.close(); return done(new Error('Expected event-stream content-type')); }
+          res.destroy();
+          srv.close();
+          done();
+        });
+        req.on('error', function (err) { srv.close(); done(err); });
+      });
     });
   });
 });

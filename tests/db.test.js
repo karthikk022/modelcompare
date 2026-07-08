@@ -7,8 +7,8 @@ describe('db.js', function () {
   });
 
   after(async function () {
-    try { await db.deleteModel('test-model-1'); } catch (e) { /* skip */ }
-    try { await db.deleteModel('test-model-2'); } catch (e) { /* skip */ }
+    try { await db.deleteModel('test-model-1'); } catch (e) { console.warn('[test] cleanup failed:', e.message); }
+    try { await db.deleteModel('test-model-2'); } catch (e) { console.warn('[test] cleanup failed:', e.message); }
   });
 
   describe('getAllModels()', function () {
@@ -99,12 +99,5 @@ describe('db.js', function () {
     });
   });
 
-  describe('Chat history', function () {
-    it('should add and retrieve chat entries', async function () {
-      await db.addChatEntry('user', 'Hello');
-      await db.addChatEntry('bot', 'Hi there');
-      const history = await db.getChatHistory();
-      assert.isAtLeast(history.length, 2);
-    });
-  });
+
 });

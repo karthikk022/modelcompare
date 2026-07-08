@@ -2,8 +2,9 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'data', 'models.db');
-const DATA_DIR = path.join(__dirname, 'data');
+const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const DB_PATH = path.join(PROJECT_ROOT, 'data', 'models.db');
+const DATA_DIR = path.join(PROJECT_ROOT, 'data');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -46,13 +47,6 @@ db.exec(`
     updated_at TEXT
   );
 
-  CREATE TABLE IF NOT EXISTS chat_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -90,8 +84,29 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_usage_log_time ON usage_log(created_at);
 `);
 
-// Migration: add open_router_slug column if missing
-try { db.exec("ALTER TABLE models ADD COLUMN open_router_slug TEXT DEFAULT ''"); } catch (e) { /* already exists */ }
+// ========== MIGRATIONS ==========
+db.exec(`CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT (datetime('now')))`);
+
+const migrations = [
+  {
+    name: '001_add_open_router_slug',
+    run: () => {
+      // check if column exists before adding (handles migration from pre-migration system)
+      const cols = db.prepare("PRAGMA table_info('models')").all().map(c => c.name);
+      if (!cols.includes('open_router_slug')) {
+        db.exec("ALTER TABLE models ADD COLUMN open_router_slug TEXT DEFAULT ''");
+      }
+    },
+  },
+];
+
+const applied = new Set(db.prepare('SELECT name FROM _migrations').all().map(r => r.name));
+for (const m of migrations) {
+  if (applied.has(m.name)) continue;
+  const tx = db.transaction(() => { m.run(); db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(m.name); });
+  tx();
+  console.log('Migration applied: ' + m.name);
+}
 
 // ========== MIGRATE FROM JSON ==========
 function migrateFromJson() {
@@ -175,8 +190,6 @@ const stmts = {
     likes=@likes, downloads=@downloads, pipeline=@pipeline, last_refreshed=@lastRefreshed, updated_at=@updatedAt,
     open_router_slug=@openRouterSlug WHERE id=@id`),
   delete: db.prepare('DELETE FROM models WHERE id = ?'),
-  upsertChat: db.prepare('INSERT INTO chat_history (role, content, created_at) VALUES (?, ?, ?)'),
-  getChat: db.prepare('SELECT * FROM chat_history ORDER BY created_at ASC LIMIT 100'),
   insertHistory: db.prepare(`INSERT INTO model_history (model_id, snapshot_at, input_price, output_price, speed, arena_elo, benchmarks, scores, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   getHistory: db.prepare('SELECT * FROM model_history WHERE model_id = ? ORDER BY snapshot_at DESC LIMIT 50'),
   getHistoryLatest: db.prepare('SELECT snapshot_at, model_id, MAX(id) as id FROM model_history GROUP BY model_id'),
@@ -266,7 +279,7 @@ function safeJson(str, fallback) {
   try { return JSON.parse(str); } catch { return fallback; }
 }
 
-const api = {};
+const api: Record<string, any> = {};
 
 // ========== ASYNC PUBLIC API ==========
 async function snapshotAllModels(source) {
@@ -294,10 +307,6 @@ api.updateModel = async (m) => {
   return rowToModel(stmts.getById.get(m.id));
 };
 api.deleteModel = async (id) => stmts.delete.run(id);
-api.addChatEntry = async (role, content) => {
-  stmts.upsertChat.run(role, content, new Date().toISOString());
-};
-api.getChatHistory = async () => stmts.getChat.all();
 api.getSetting = async (key) => {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   return row ? row.value : null;
@@ -415,7 +424,7 @@ api.getUsageStats = async (days) => {
     byDay[day].totalTokens += r.total_tokens;
     byDay[day].cost += r.cost;
   }
-  return { total, byModel: Object.values(byModel), byDay: Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date)) };
+  return { total, byModel: Object.values(byModel), byDay: (Object.values(byDay) as { date: string; calls: number; totalTokens: number; cost: number }[]).sort((a, b) => a.date.localeCompare(b.date)) };
 };
 
 module.exports = api;

@@ -3,7 +3,8 @@ const path = require('path');
 const db = require('../db');
 const { hfFetch, handle } = require('./utils');
 
-const BENCHMARKS_FILE = path.join(__dirname, '..', 'benchmarks-data', 'benchmarks.json');
+const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
+const BENCHMARKS_FILE = path.join(PROJECT_ROOT, 'benchmarks-data', 'benchmarks.json');
 let _CURATED_BENCHMARKS = [];
 try {
   _CURATED_BENCHMARKS = JSON.parse(fs.readFileSync(BENCHMARKS_FILE, 'utf8'));
@@ -136,7 +137,7 @@ function register(app) {
             try {
               const test = await hfFetch('/models/' + c);
               if (test && test.id) { hfId = c; break; }
-            } catch (e) { /* skip */ }
+            } catch (e) { console.warn('[benchmark] HF model lookup failed:', e.message); }
           }
         }
       }
@@ -172,7 +173,7 @@ function register(app) {
           updated++;
           results.push({ id: m.id, name: m.name, benchmarks: Object.keys(m.benchmarks).length });
         }
-      } catch (e) { /* skip */ }
+      } catch (e) { console.warn('[benchmark] HF results fetch failed:', e.message); }
     }
 
     if (updated > 0) await db.snapshotAllModels('benchmark-sync');

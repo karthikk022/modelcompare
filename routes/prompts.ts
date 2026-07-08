@@ -50,12 +50,13 @@ function register(app) {
       if (!model) { results.push({ id: modelId, name: modelId, error: 'Model not found' }); continue; }
 
       let slug = model.openRouterSlug;
-      if (!slug && pricing.models[modelId]) slug = pricing.models[modelId].openRouterId;
+      if (!slug && (pricing.models as any)[modelId]) slug = (pricing.models as any)[modelId].openRouterId;
       if (!slug) {
         const nl = model.name.toLowerCase().replace(/[^a-z0-9]/g, '');
         for (const [mid, info] of Object.entries(pricing.models || {})) {
-          if (mid.toLowerCase().replace(/[^a-z0-9]/g, '') === nl || (info.openRouterName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === nl) {
-            slug = info.openRouterId;
+          const pricingInfo = info as any;
+          if (mid.toLowerCase().replace(/[^a-z0-9]/g, '') === nl || (pricingInfo.openRouterName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === nl) {
+            slug = pricingInfo.openRouterId;
             break;
           }
         }
@@ -64,7 +65,7 @@ function register(app) {
         try {
           const orRes = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ModelCompare/1.0' } });
           if (orRes.ok) {
-            const orData = await orRes.json();
+            const orData = await orRes.json() as any;
             const allOr = orData.data || [];
             const match = findModelMatch(model.name, allOr);
             if (match) slug = match.id;
@@ -96,7 +97,7 @@ function register(app) {
         });
 
         const latency = Date.now() - startTime;
-        const orData = await orRes.json();
+        const orData = await orRes.json() as any;
 
         if (!orRes.ok) {
           let errorMsg = 'OpenRouter ' + orRes.status + ': ' + (orData.error?.message || orRes.statusText);
@@ -121,7 +122,7 @@ function register(app) {
         const isEmpty = content === '' && finishReason === 'stop';
         const isNullContent = content === null && outTokens > 0;
 
-        const priceInfo = pricing.models[modelId] || {};
+        const priceInfo = (pricing.models[modelId] || {}) as any;
         const inPrice = priceInfo.inputPrice != null ? priceInfo.inputPrice : model.inputPrice;
         const outPrice = priceInfo.outputPrice != null ? priceInfo.outputPrice : model.outputPrice;
         const cost = inPrice != null && outPrice != null
@@ -149,7 +150,7 @@ function register(app) {
             cost: cost != null ? Math.round(cost * 10000) / 10000 : 0,
             latencyMs: latency, finishReason: finishReason || '',
           });
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn('[prompt] usage log failed:', e.message); }
       } catch (e) {
         const latency = Date.now() - startTime;
         results.push({ id: modelId, name: model.name, error: e.name === 'AbortError' ? model.name + ' timed out (60s)' : e.message, latency });
@@ -191,12 +192,12 @@ function register(app) {
     let pricing;
     if (!slug) {
       try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fetch failed:', e.message); pricing = { models: {} }; }
-      if (!slug && pricing.models[modelId]) slug = pricing.models[modelId].openRouterId;
+      if (!slug && (pricing.models as any)[modelId]) slug = (pricing.models as any)[modelId].openRouterId;
       if (!slug) {
         try {
           const orRes = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(5000) });
           if (orRes.ok) {
-            const orData = await orRes.json();
+            const orData = await orRes.json() as any;
             const match = findModelMatch(model.name, orData.data || []);
             if (match) slug = match.id;
           }
@@ -238,7 +239,7 @@ function register(app) {
       });
 
       if (!orRes.ok) {
-        const errData = await orRes.json().catch(() => ({}));
+        const errData = await orRes.json().catch(() => ({})) as any;
         let errorMsg = 'OpenRouter ' + orRes.status + ': ' + (errData.error?.message || orRes.statusText);
         if (orRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
         res.write('data: ' + JSON.stringify({ type: 'error', message: errorMsg }) + '\n\n');
@@ -282,7 +283,7 @@ function register(app) {
               outTokens = chunk.usage.completion_tokens || 0;
             }
             if (chunk.model) orModel = chunk.model;
-          } catch (e) { /* skip */ }
+          } catch (e) { console.warn('[stream] chunk parse failed:', e.message); }
         }
       }
 
@@ -296,7 +297,7 @@ function register(app) {
 
       try {
         await db.logUsage({ modelId, modelName: model.name, slug, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
-      } catch (e) { /* skip */ }
+      } catch (e) { console.warn('[stream] usage log failed:', e.message); }
 
       res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: orModel || slug, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');
     } catch (e) {
