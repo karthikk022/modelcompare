@@ -4,3 +4,5 @@ data/*.db-wal
 data/*.db-shm
 # models-data/
 .env
+client/dist/
+client/node_modules/

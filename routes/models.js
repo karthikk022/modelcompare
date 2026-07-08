@@ -61,7 +61,23 @@ function fillDefaults(model) {
 function register(app) {
 
   app.get('/api/models', handle(async (req, res) => {
-    const models = await db.getAllModels();
+    let models = await db.getAllModels();
+    const q = (req.query.q || '').toLowerCase().trim();
+    const provider = (req.query.provider || '').toLowerCase().trim();
+    const tag = (req.query.tag || '').toLowerCase().trim();
+    if (q) models = models.filter(m => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q) || (m.description || '').toLowerCase().includes(q) || (m.tags || []).some(t => t.toLowerCase().includes(q)));
+    if (provider) models = models.filter(m => (m.provider || '').toLowerCase().includes(provider));
+    if (tag) models = models.filter(m => (m.tags || []).some(t => t.toLowerCase() === tag));
+    const sort = (req.query.sort || '').toLowerCase().trim();
+    if (sort) {
+      const desc = sort.startsWith('-');
+      const field = desc ? sort.slice(1) : sort;
+      models.sort((a, b) => {
+        const va = a[field], vb = b[field];
+        if (typeof va === 'number' && typeof vb === 'number') return desc ? vb - va : va - vb;
+        return desc ? String(vb || '').localeCompare(String(va || '')) : String(va || '').localeCompare(String(vb || ''));
+      });
+    }
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 0, 0), 1000);
     const offset = Math.max(parseInt(req.query.offset) || 0, 0);
     const sliced = offset > 0 || limit > 0 ? models.slice(offset, offset + (limit || models.length)) : models;

@@ -7,6 +7,7 @@ const app = express();
 const db = require('./db');
 const { handle } = require('./routes/utils');
 const { requireAuth, requireCsrf } = require('./routes/auth');
+const { changeBus } = require('./routes/events');
 
 const PORT = process.env.PORT || 3001;
 
@@ -44,6 +45,7 @@ require('./routes/analytics').register(app);
 require('./routes/discovery').register(app);
 require('./routes/settings').register(app);
 require('./routes/benchmarks').register(app);
+require('./routes/events').register(app);
 
 /* Auth + CSRF guards for mutation endpoints: settings, model CRUD, snapshots */
 app.use(/^\/(api\/settings|api\/models|api\/snapshot)/, (req, res, next) => {
@@ -113,18 +115,18 @@ async function start() {
 
     intervals.push(setInterval(async () => {
       const changes = await db.getAllChanges();
-      if (changes.length) {
-        const sig = changes.filter(c => {
-          return Object.entries(c.changes).some(([k, v]) => {
-            if (k.startsWith('bench_') && Math.abs(v.diff) > 2) return true;
-            if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(v.diff) > 0.5;
-            return false;
-          });
+      if (!changes.length) return;
+      const sig = changes.filter(c => {
+        return Object.entries(c.changes).some(([k, v]) => {
+          if (k.startsWith('bench_') && Math.abs(v.diff) > 2) return true;
+          if (k === 'inputPrice' || k === 'outputPrice') return Math.abs(v.diff) > 0.5;
+          return false;
         });
-        if (sig.length) {
-          console.log('[ALERT] ' + sig.length + ' models with significant changes:');
-          sig.forEach(c => console.log('  ' + c.model.name + ': ' + Object.keys(c.changes).length + ' changes'));
-        }
+      });
+      if (sig.length) {
+        console.log('[ALERT] ' + sig.length + ' models with significant changes:');
+        sig.forEach(c => console.log('  ' + c.model.name + ': ' + Object.keys(c.changes).length + ' changes'));
+        changeBus.emit('changes', sig);
       }
     }, 30 * 60 * 1000));
   });
