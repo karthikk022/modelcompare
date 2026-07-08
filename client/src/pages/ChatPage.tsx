@@ -49,7 +49,7 @@ export default function ChatPage() {
   const convRef = useRef(conv)
   convRef.current = conv
 
-  useEffect(() => { fetchModels().then(m => { setModels(m); if (!modelId && m.length) setModelId(m[0].id) }) }, [])
+  useEffect(() => { fetchModels().then(({ models }) => { setModels(models); if (!modelId && models.length) setModelId(models[0].id) }) }, [])
 
   const model = models.find(m => m.id === modelId)
 

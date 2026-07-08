@@ -1,15 +1,22 @@
-FROM node:22-alpine
+# Stage 1: Build React client
+FROM node:22-alpine AS client-build
+WORKDIR /app/client
+COPY client/package*.json ./
+RUN npm ci
+COPY client/ ./
+RUN npm run build
 
+# Stage 2: Server
+FROM node:22-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --production
+RUN npm ci --production
 
 COPY . .
+COPY --from=client-build /app/client/dist ./client/dist
 
-# Render uses PORT env var (default 10000), fallback 3001 for local dev
 ENV PORT=3001
-
 EXPOSE 3001
 
 VOLUME /app/data

@@ -17,7 +17,7 @@ export default function PromptsPage() {
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof getUsage>>>([])
   const [tab, setTab] = useState<'test' | 'history'>('test')
 
-  useEffect(() => { fetchModels().then(m => setModels(m)) }, [])
+  useEffect(() => { fetchModels().then(({ models }) => setModels(models)) }, [])
   useEffect(() => {
     if (tab === 'history') getUsage().then(u => setUsage(u))
   }, [tab])

@@ -18,13 +18,35 @@ function PageLoader() {
   return <div className="loading">Loading...</div>
 }
 
+function ChangeToast({ msg, onClose }: { msg: string; onClose: () => void }) {
+  useEffect(() => { const t = setTimeout(onClose, 6000); return () => clearTimeout(t) }, [onClose])
+  return <div className="toast change-toast" onClick={onClose}>{msg}</div>
+}
+
 function App() {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark')
+  const [changeMsg, setChangeMsg] = useState('')
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  /* SSE change stream — pushes a toast when the server detects significant model changes */
+  useEffect(() => {
+    let es: EventSource | null = null
+    try {
+      es = new EventSource('/api/events')
+      es.addEventListener('message', (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.type === 'change') setChangeMsg(data.count + ' model(s) changed — refresh to see updates')
+        } catch { /* ignore parse errors */ }
+      })
+      es.addEventListener('error', () => { /* SSE will auto-reconnect */ })
+    } catch { /* EventSource not available */ }
+    return () => { if (es) es.close() }
+  }, [])
 
   function toggleTheme() {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark')
@@ -35,6 +57,7 @@ function App() {
       <BrowserRouter>
         <div className="app">
           <Navbar />
+          {changeMsg && <ChangeToast msg={changeMsg} onClose={() => setChangeMsg('')} />}
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/" element={<ErrorBoundary><ModelsPage /></ErrorBoundary>} />

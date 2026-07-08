@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Model } from '../types'
 import { fetchModels, deleteModel, exportModels } from '../api'
 import ModelCard from '../components/ModelCard'
@@ -8,35 +8,51 @@ import RecommendWidget from '../components/RecommendWidget'
 import SettingsModal from '../components/SettingsModal'
 import { useTheme } from '../App'
 
+const PAGE_SIZE = 50;
+
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([])
-  const [filtered, setFiltered] = useState<Model[]>([])
+  const [total, setTotal] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [providerFilter, setProviderFilter] = useState('')
+  const [sort, setSort] = useState('-arenaElo')
+  const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState<Model | null | true>(null)
   const [showSettings, setShowSettings] = useState(false)
   const { theme, toggleTheme } = useTheme()
+  const fetchId = useRef(0)
 
-  useEffect(() => {
-    fetchModels()
-      .then(m => { setModels(m); setFiltered(m) })
-      .finally(() => setLoading(false))
+  const filterKey = search + '|' + providerFilter + '|' + sort
+
+  const doFetch = useCallback((q: string, p: string, s: string, o: number) => {
+    const id = ++fetchId.current
+    setLoading(true)
+    fetchModels({ q: q || undefined, provider: p || undefined, sort: s, limit: PAGE_SIZE, offset: o })
+      .then(({ models: m, total: t }) => {
+        if (id !== fetchId.current) return
+        setModels(m); setTotal(t)
+      })
+      .finally(() => {
+        if (id === fetchId.current) setLoading(false)
+      })
   }, [])
 
   useEffect(() => {
-    let result = models
-    if (search) {
-      const q = search.toLowerCase()
-      result = result.filter(m => m.name.toLowerCase().includes(q) || m.provider?.toLowerCase().includes(q))
-    }
-    if (providerFilter) result = result.filter(m => m.provider === providerFilter)
-    setFiltered(result)
-  }, [search, providerFilter, models])
+    setOffset(0)
+    doFetch(search, providerFilter, sort, 0)
+  }, [filterKey, doFetch])
 
-  const providers = [...new Set(models.map(m => m.provider).filter(Boolean))].sort()
+  useEffect(() => {
+    if (offset === 0) return
+    doFetch(search, providerFilter, sort, offset)
+  }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1
+
   const selected = models.find(m => m.id === selectedId)
 
   function toggleCompare(id: string) {
@@ -47,7 +63,7 @@ export default function ModelsPage() {
     if (!confirm('Delete this model?')) return
     try {
       await deleteModel(id)
-      setModels(prev => prev.filter(m => m.id !== id))
+      doFetch(search, providerFilter, sort, offset)
       if (selectedId === id) setSelectedId(null)
     } catch { /* ignore */ }
   }
@@ -60,12 +76,8 @@ export default function ModelsPage() {
     URL.revokeObjectURL(url)
   }
 
-  function handleSaved(m: Model) {
-    if (showForm === true) {
-      setModels(prev => [...prev, m])
-    } else {
-      setModels(prev => prev.map(x => x.id === m.id ? m : x))
-    }
+  function handleSaved() {
+    doFetch(search, providerFilter, sort, offset)
     setShowForm(null)
   }
 
@@ -76,10 +88,20 @@ export default function ModelsPage() {
           <input type="text" placeholder="Search models..." value={search} onChange={e => setSearch(e.target.value)} className="search-input" />
           <select value={providerFilter} onChange={e => setProviderFilter(e.target.value)} className="filter-select">
             <option value="">All providers</option>
-            {providers.map(p => <option key={p} value={p}>{p}</option>)}
+            {['OpenAI', 'Anthropic', 'Google', 'Meta', 'Mistral', 'DeepSeek', 'Qwen', 'Other'].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={sort} onChange={e => setSort(e.target.value)} className="filter-select">
+            <option value="-arenaElo">ELO (high first)</option>
+            <option value="arenaElo">ELO (low first)</option>
+            <option value="-inputPrice">Price (high first)</option>
+            <option value="inputPrice">Price (low first)</option>
+            <option value="-speed">Speed (fast first)</option>
+            <option value="speed">Speed (slow first)</option>
+            <option value="name">Name A-Z</option>
           </select>
         </div>
         <div className="toolbar-actions">
+          <span className="text-dim">{total} models</span>
           <button className="btn btn-sm" onClick={() => handleExport('json')}>JSON</button>
           <button className="btn btn-sm" onClick={() => handleExport('csv')}>CSV</button>
           <button className="btn btn-sm" onClick={() => setShowSettings(true)} title="Settings">Settings</button>
@@ -88,13 +110,22 @@ export default function ModelsPage() {
         </div>
       </div>
 
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button className="btn btn-sm" disabled={currentPage <= 1} onClick={() => setOffset(offset - PAGE_SIZE)}>Prev</button>
+          <span className="text-dim">Page {currentPage} / {totalPages}</span>
+          <button className="btn btn-sm" disabled={currentPage >= totalPages} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</button>
+        </div>
+      )}
+
       <RecommendWidget onSelect={id => setSelectedId(id)} />
 
       {loading && <div className="loading">Loading models...</div>}
 
       <div className="main-layout">
         <div className="model-grid">
-          {filtered.map(m => (
+          {!loading && models.length === 0 && <div className="text-dim" style={{ padding: 40 }}>No models found.</div>}
+          {models.map(m => (
             <ModelCard
               key={m.id}
               model={m}
@@ -115,6 +146,14 @@ export default function ModelsPage() {
           />
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="pagination" style={{ justifyContent: 'center', marginTop: 16 }}>
+          <button className="btn btn-sm" disabled={currentPage <= 1} onClick={() => setOffset(offset - PAGE_SIZE)}>Prev</button>
+          <span className="text-dim">Page {currentPage} / {totalPages}</span>
+          <button className="btn btn-sm" disabled={currentPage >= totalPages} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</button>
+        </div>
+      )}
 
       {compareIds.length >= 2 && (
         <div className="compare-bar">

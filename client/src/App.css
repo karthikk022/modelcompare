@@ -520,6 +520,21 @@ body {
   display: inline-block;
 }
 
+.change-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  cursor: pointer;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .text-dim { color: var(--text-dim); }
 
 /* Prompts */
