@@ -2,6 +2,24 @@ const db = require('../db');
 
 const OR_API = 'https://openrouter.ai';
 
+const PROVIDERS = {
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1', title: 'OpenRouter' },
+  openai: { baseUrl: 'https://api.openai.com/v1', title: 'OpenAI' },
+  groq: { baseUrl: 'https://api.groq.com/openai/v1', title: 'Groq' },
+  together: { baseUrl: 'https://api.together.xyz/v1', title: 'Together' },
+};
+
+async function getProviderConfig(req) {
+  const provider = (req?.body?.apiProvider) || (await db.getSetting('api_provider')) || 'openrouter';
+  const cfg = PROVIDERS[provider] || PROVIDERS.openrouter;
+  const keySetting = provider === 'openrouter' ? 'openrouter_api_key' : provider + '_api_key';
+  let apiKey = req?.headers['x-api-key'] || req?.body?.apiKey;
+  if (!apiKey) {
+    apiKey = (await db.getSetting(keySetting)) || process.env[provider.toUpperCase() + '_API_KEY'] || '';
+  }
+  return { ...cfg, apiKey, provider };
+}
+
 let _livePricingCache = null;
 let _livePricingTime = null;
 const _LIVE_TTL = 5 * 60 * 1000;
@@ -110,4 +128,4 @@ function handle(handler) {
   };
 }
 
-module.exports = { getOpenRouterApiKey, webSearch, findModelMatch, fetchLivePricing, hfFetch, stringToColor, handle };
+module.exports = { getProviderConfig, getOpenRouterApiKey, webSearch, findModelMatch, fetchLivePricing, hfFetch, stringToColor, handle };

@@ -1,5 +1,5 @@
 const db = require('../db');
-const { getOpenRouterApiKey, webSearch, fetchLivePricing, findModelMatch, handle } = require('./utils');
+const { getProviderConfig, webSearch, fetchLivePricing, findModelMatch, handle } = require('./utils');
 
 function register(app) {
 
@@ -35,8 +35,8 @@ function register(app) {
       }
     }
 
-    const apiKey = await getOpenRouterApiKey(req);
-    if (!apiKey) return res.status(400).json({ error: 'OpenRouter API key not configured. Add it via Settings.' });
+    const pcfg = await getProviderConfig(req);
+    if (!pcfg.apiKey) return res.status(400).json({ error: pcfg.provider + ' API key not configured. Add it via Settings.' });
 
     const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
     const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
@@ -61,7 +61,7 @@ function register(app) {
           }
         }
       }
-      if (!slug) {
+      if (!slug && pcfg.provider === 'openrouter') {
         try {
           const orRes = await fetch('https://openrouter.ai/api/v1/models', { signal: AbortSignal.timeout(5000), headers: { 'User-Agent': 'ModelCompare/1.0' } });
           if (orRes.ok) {
@@ -72,51 +72,55 @@ function register(app) {
           }
         } catch (e) { console.warn('[prompt] slug lookup failed:', e.message); }
       }
-      if (!slug) { results.push({ id: modelId, name: model.name, error: 'No OpenRouter slug found. Try running "Live" pricing first, or check Settings > OpenRouter API key.' }); continue; }
-      if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
+      if (!slug && pcfg.provider === 'openrouter') { results.push({ id: modelId, name: model.name, error: 'No OpenRouter slug found for ' + model.name + '. Try running "Live" pricing first.' }); continue; }
 
       const startTime = Date.now();
       try {
+        const modelName = pcfg.provider === 'openrouter' ? slug : (model.id || model.name);
         const body = {
-          model: slug,
+          model: modelName,
           messages: msgs,
           max_tokens: maxT,
           temperature: temp,
         };
 
-        const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const headers: Record<string, string> = {
+          'Authorization': 'Bearer ' + pcfg.apiKey,
+          'Content-Type': 'application/json',
+        };
+        if (pcfg.provider === 'openrouter') {
+          headers['HTTP-Referer'] = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001';
+          headers['X-Title'] = 'ModelCompare';
+        }
+
+        const apiRes = await fetch(pcfg.baseUrl + '/chat/completions', {
           method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + apiKey,
-            'Content-Type': 'application/json',
-            'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001',
-            'X-Title': 'ModelCompare',
-          },
+          headers,
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(60000),
         });
 
         const latency = Date.now() - startTime;
-        const orData = await orRes.json() as any;
+        const apiData = await apiRes.json() as any;
 
-        if (!orRes.ok) {
-          let errorMsg = 'OpenRouter ' + orRes.status + ': ' + (orData.error?.message || orRes.statusText);
-          if (orRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
+        if (!apiRes.ok) {
+          let errorMsg = (pcfg.provider === 'openrouter' ? 'OpenRouter ' : pcfg.title + ' ') + apiRes.status + ': ' + (apiData.error?.message || apiRes.statusText);
+          if (pcfg.provider === 'openrouter' && apiRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
           results.push({ id: modelId, name: model.name, error: errorMsg, latency });
           continue;
         }
 
         let content = null;
-        if (orData.choices && orData.choices[0]) {
-          const msg = orData.choices[0].message || orData.choices[0].delta || {};
+        if (apiData.choices && apiData.choices[0]) {
+          const msg = apiData.choices[0].message || apiData.choices[0].delta || {};
           content = msg.content != null ? msg.content : '';
           if (Array.isArray(content)) content = content.map(p => p.text || p.content || '').join('');
           if (!content && (msg.reasoning || msg.reasoning_content)) {
             content = '\u{1F4AD} ' + (msg.reasoning || msg.reasoning_content);
           }
         }
-        const finishReason = orData.choices && orData.choices[0] ? orData.choices[0].finish_reason : null;
-        const usage = orData.usage || {};
+        const finishReason = apiData.choices && apiData.choices[0] ? apiData.choices[0].finish_reason : null;
+        const usage = apiData.usage || {};
         const inTokens = usage.prompt_tokens || 0;
         const outTokens = usage.completion_tokens || 0;
         const isEmpty = content === '' && finishReason === 'stop';
@@ -139,7 +143,7 @@ function register(app) {
           inTokens,
           outTokens,
           cost: cost != null ? Math.round(cost * 10000) / 10000 : null,
-          model: orData.model || slug,
+          model: apiData.model || slug,
           usage: { promptTokens: inTokens, completionTokens: outTokens },
           _empty: isEmpty || isNullContent || false,
         });
@@ -188,9 +192,12 @@ function register(app) {
     const model = await db.getModel(modelId);
     if (!model) return res.status(404).json({ error: 'Model not found' });
 
+    const pcfg = await getProviderConfig(req);
+    if (!pcfg.apiKey) return res.status(400).json({ error: pcfg.provider + ' API key not configured' });
+
     let slug = model.openRouterSlug;
     let pricing;
-    if (!slug) {
+    if (!slug && pcfg.provider === 'openrouter') {
       try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fetch failed:', e.message); pricing = { models: {} }; }
       if (!slug && (pricing.models as any)[modelId]) slug = (pricing.models as any)[modelId].openRouterId;
       if (!slug) {
@@ -203,12 +210,9 @@ function register(app) {
           }
         } catch (e) { console.warn('[stream] slug lookup failed:', e.message); }
       }
-      if (!slug) return res.status(400).json({ error: 'No OpenRouter slug found' });
+      if (!slug) return res.status(400).json({ error: 'No OpenRouter slug found for ' + model.name });
       if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
     }
-
-    const apiKey = await getOpenRouterApiKey(req);
-    if (!apiKey) return res.status(400).json({ error: 'OpenRouter API key not configured' });
 
     const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
     const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
@@ -226,22 +230,27 @@ function register(app) {
     req.on('close', () => { ac.abort(); clearTimeout(timeout); if (!res.writableEnded) res.end(); });
 
     try {
-      const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const modelName = pcfg.provider === 'openrouter' ? slug : (model.id || model.name);
+      const headers: Record<string, string> = {
+        'Authorization': 'Bearer ' + pcfg.apiKey,
+        'Content-Type': 'application/json',
+      };
+      if (pcfg.provider === 'openrouter') {
+        headers['HTTP-Referer'] = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001';
+        headers['X-Title'] = 'ModelCompare';
+      }
+
+      const apiRes = await fetch(pcfg.baseUrl + '/chat/completions', {
         method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001',
-          'X-Title': 'ModelCompare',
-        },
-        body: JSON.stringify({ model: slug, messages: msgs, max_tokens: maxT, temperature: temp, stream: true }),
+        headers,
+        body: JSON.stringify({ model: modelName, messages: msgs, max_tokens: maxT, temperature: temp, stream: true }),
         signal: ac.signal,
       });
 
-      if (!orRes.ok) {
-        const errData = await orRes.json().catch(() => ({})) as any;
-        let errorMsg = 'OpenRouter ' + orRes.status + ': ' + (errData.error?.message || orRes.statusText);
-        if (orRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
+      if (!apiRes.ok) {
+        const errData = await apiRes.json().catch(() => ({})) as any;
+        let errorMsg = (pcfg.provider === 'openrouter' ? 'OpenRouter ' : pcfg.title + ' ') + apiRes.status + ': ' + (errData.error?.message || apiRes.statusText);
+        if (pcfg.provider === 'openrouter' && apiRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
         res.write('data: ' + JSON.stringify({ type: 'error', message: errorMsg }) + '\n\n');
         res.end();
         return;
@@ -251,9 +260,9 @@ function register(app) {
       let finishReason = null;
       let outTokens = 0;
       let inTokens = 0;
-      let orModel = slug;
+      let responseModel = slug;
 
-      const reader = orRes.body.getReader();
+      const reader = apiRes.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -282,24 +291,22 @@ function register(app) {
               inTokens = chunk.usage.prompt_tokens || 0;
               outTokens = chunk.usage.completion_tokens || 0;
             }
-            if (chunk.model) orModel = chunk.model;
+            if (chunk.model) responseModel = chunk.model;
           } catch (e) { console.warn('[stream] chunk parse failed:', e.message); }
         }
       }
 
       const latency = Date.now() - startTime;
 
-      if (!pricing) { try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fallback failed:', e.message); pricing = { models: {} }; } }
-      const priceInfo = pricing.models[modelId] || {};
-      const inPrice = priceInfo.inputPrice != null ? priceInfo.inputPrice : model.inputPrice;
-      const outPrice = priceInfo.outputPrice != null ? priceInfo.outputPrice : model.outputPrice;
+      const inPrice = model.inputPrice;
+      const outPrice = model.outputPrice;
       const cost = inPrice != null && outPrice != null ? ((inTokens * inPrice) + (outTokens * outPrice)) / 1e6 : null;
 
       try {
         await db.logUsage({ modelId, modelName: model.name, slug, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
       } catch (e) { console.warn('[stream] usage log failed:', e.message); }
 
-      res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: orModel || slug, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');
+      res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: responseModel || slug, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');
     } catch (e) {
       const latency = Date.now() - startTime;
       res.write('data: ' + JSON.stringify({ type: 'error', message: e.name === 'AbortError' ? model.name + ' timed out (60s)' : e.message, latency }) + '\n\n');
