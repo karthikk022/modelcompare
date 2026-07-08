@@ -6,11 +6,16 @@ const helmet = require('helmet');
 const app = express();
 const db = require('./db');
 const { handle } = require('./routes/utils');
+const { requireAuth } = require('./routes/auth');
 
 const PORT = process.env.PORT || 3001;
 
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : (process.env.NODE_ENV === 'production' ? [] : ['http://localhost:3001', 'http://localhost:5173']);
+
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(cors());
+app.use(cors(ALLOWED_ORIGINS.length > 0 ? { origin: ALLOWED_ORIGINS } : undefined));
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -41,6 +46,12 @@ require('./routes/discovery').register(app);
 require('./routes/settings').register(app);
 require('./routes/benchmarks').register(app);
 
+/* Auth guard for mutation endpoints: settings, model CRUD, snapshots */
+app.use(/^\/(api\/settings|api\/models|api\/snapshot)/, (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return requireAuth(req, res, next);
+  next();
+});
+
 app.get('/api/health', handle(async (req, res) => {
   const models = await db.getAllModels();
   res.json({
@@ -58,6 +69,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+/*
+ * Two frontend codebases exist: client/ (React SPA) and public/models.html (legacy SPA).
+ * The React production build (client/dist/) takes priority when present.
+ * Otherwise the legacy HTML frontend is served as a fallback.
+ * To switch: `cd client && npm run build` to enable React; delete client/dist to revert.
+ */
 const reactDistDir = path.join(__dirname, 'client', 'dist');
 const reactIndex = path.join(reactDistDir, 'index.html');
 const hasReact = require('fs').existsSync(reactIndex);

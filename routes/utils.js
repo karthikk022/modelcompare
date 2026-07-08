@@ -6,6 +6,15 @@ let _livePricingCache = null;
 let _livePricingTime = null;
 const _LIVE_TTL = 5 * 60 * 1000;
 
+/*
+ * BYO-key pattern: accepts a client-supplied OpenRouter key via x-openrouter-key header
+ * or body.openRouterKey field. This lets each user bring their own billing without
+ * the server provisioning a shared key. The key is used server-side for the OpenRouter
+ * API call — it is never stored, logged, or exposed to other clients.
+ * WARNING: if the server is public, any client-provided key is transiently in server
+ * memory during the request. Do not use this pattern if you require server-side key
+ * isolation guarantees.
+ */
 async function getOpenRouterApiKey(req) {
   const clientKey = req && (req.headers['x-openrouter-key'] || (req.body && req.body.openRouterKey));
   if (clientKey) return clientKey;
@@ -25,6 +34,7 @@ async function webSearch(query) {
       link: 'https://en.wikipedia.org/wiki/' + encodeURIComponent(r.title.replace(/ /g, '_')),
     }));
   } catch (e) {
+    console.warn('[webSearch] failed:', e.message);
     return [];
   }
 }

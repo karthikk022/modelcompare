@@ -31,7 +31,7 @@ function register(app) {
               searchResults.map((r, i) => (i + 1) + '. ' + r.title + ': ' + r.snippet).join('\n');
             msgs.splice(msgs.length - 1, 0, { role: 'system', content: context });
           }
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn('[prompt] webSearch failed:', e.message); }
       }
     }
 
@@ -42,7 +42,7 @@ function register(app) {
     const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
 
     let pricing;
-    try { pricing = await fetchLivePricing(true); } catch (e) { pricing = { models: {} }; }
+    try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[prompt] pricing fetch failed:', e.message); pricing = { models: {} }; }
 
     const results = [];
     for (const modelId of modelIds) {
@@ -69,7 +69,7 @@ function register(app) {
             const match = findModelMatch(model.name, allOr);
             if (match) slug = match.id;
           }
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn('[prompt] slug lookup failed:', e.message); }
       }
       if (!slug) { results.push({ id: modelId, name: model.name, error: 'No OpenRouter slug found. Try running "Live" pricing first, or check Settings > OpenRouter API key.' }); continue; }
       if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
@@ -179,7 +179,7 @@ function register(app) {
             const context = 'Web search results:\n' + searchResults.map((r, i) => (i + 1) + '. ' + r.title + ': ' + r.snippet).join('\n');
             msgs.splice(msgs.length - 1, 0, { role: 'system', content: context });
           }
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn('[stream] webSearch failed:', e.message); }
       }
     }
 
@@ -190,7 +190,7 @@ function register(app) {
     let slug = model.openRouterSlug;
     let pricing;
     if (!slug) {
-      try { pricing = await fetchLivePricing(true); } catch (e) { pricing = { models: {} }; }
+      try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fetch failed:', e.message); pricing = { models: {} }; }
       if (!slug && pricing.models[modelId]) slug = pricing.models[modelId].openRouterId;
       if (!slug) {
         try {
@@ -200,7 +200,7 @@ function register(app) {
             const match = findModelMatch(model.name, orData.data || []);
             if (match) slug = match.id;
           }
-        } catch (e) { /* skip */ }
+        } catch (e) { console.warn('[stream] slug lookup failed:', e.message); }
       }
       if (!slug) return res.status(400).json({ error: 'No OpenRouter slug found' });
       if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
@@ -288,7 +288,7 @@ function register(app) {
 
       const latency = Date.now() - startTime;
 
-      if (!pricing) { try { pricing = await fetchLivePricing(true); } catch (e) { pricing = { models: {} }; } }
+      if (!pricing) { try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fallback failed:', e.message); pricing = { models: {} }; } }
       const priceInfo = pricing.models[modelId] || {};
       const inPrice = priceInfo.inputPrice != null ? priceInfo.inputPrice : model.inputPrice;
       const outPrice = priceInfo.outputPrice != null ? priceInfo.outputPrice : model.outputPrice;
