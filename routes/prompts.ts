@@ -1,10 +1,79 @@
 const db = require('../db');
 const { getProviderConfig, webSearch, fetchLivePricing, findModelMatch, handle } = require('./utils');
 
+async function runDirectPrompt(pcfg, modelName, opts, req, res) {
+  const { prompt, systemPrompt, maxTokens, temperature, messages, webSearch: useWebSearch } = opts;
+  let msgs = messages;
+  if (!msgs || !Array.isArray(msgs) || msgs.length === 0) {
+    if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt (string) or messages (array) required' });
+    msgs = [{ role: 'user', content: prompt }];
+    if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim()) {
+      msgs.unshift({ role: 'system', content: systemPrompt.trim() });
+    }
+  }
+  if (useWebSearch) {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    msgs.unshift({ role: 'system', content: 'Current date: ' + dateStr + '. Current time: ' + timeStr + '.' });
+    const lastUserMsg = msgs.filter(m => m.role === 'user').pop();
+    if (lastUserMsg) {
+      try {
+        const searchResults = await webSearch(lastUserMsg.content);
+        if (searchResults && searchResults.length > 0) {
+          msgs.splice(msgs.length - 1, 0, { role: 'system', content: 'Web search results:\n' + searchResults.map((r, i) => (i + 1) + '. ' + r.title + ': ' + r.snippet).join('\n') });
+        }
+      } catch (e) { console.warn('[prompt] webSearch failed:', e.message); }
+    }
+  }
+  const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
+  const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
+  const headers: Record<string, string> = { 'Authorization': 'Bearer ' + pcfg.apiKey, 'Content-Type': 'application/json' };
+  const startTime = Date.now();
+  try {
+    const apiRes = await fetch(pcfg.baseUrl + '/chat/completions', {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: modelName, messages: msgs, max_tokens: maxT, temperature: temp }),
+      signal: AbortSignal.timeout(60000),
+    });
+    const latency = Date.now() - startTime;
+    const apiData = await apiRes.json() as any;
+    if (!apiRes.ok) {
+      const errorMsg = pcfg.title + ' ' + apiRes.status + ': ' + (apiData.error?.message || apiRes.statusText);
+      return res.json({ results: [{ id: modelName, name: modelName, error: errorMsg, latency }], prompt });
+    }
+    let content = null;
+    if (apiData.choices && apiData.choices[0]) {
+      const msg = apiData.choices[0].message || apiData.choices[0].delta || {};
+      content = msg.content != null ? msg.content : '';
+      if (Array.isArray(content)) content = content.map(p => p.text || '').join('');
+    }
+    const usage = apiData.usage || {};
+    const inTokens = usage.prompt_tokens || 0;
+    const outTokens = usage.completion_tokens || 0;
+    try {
+      await db.logUsage({ modelId: modelName, modelName, slug: modelName, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: 0, latencyMs: latency, finishReason: (apiData.choices && apiData.choices[0] && apiData.choices[0].finish_reason) || '' });
+    } catch (e) { console.warn('[prompt] usage log failed:', e.message); }
+    res.json({ results: [{ id: modelName, name: modelName, content: content || '(empty)', latency, inTokens, outTokens, cost: null, model: apiData.model || modelName, finishReason: (apiData.choices && apiData.choices[0] && apiData.choices[0].finish_reason) || null }], prompt });
+  } catch (e) {
+    const latency = Date.now() - startTime;
+    res.json({ results: [{ id: modelName, name: modelName, error: e.name === 'AbortError' ? modelName + ' timed out (60s)' : e.message, latency }], prompt });
+  }
+}
+
 function register(app) {
 
   app.post('/api/test-prompt', handle(async (req, res) => {
-    const { models: modelIds, prompt, systemPrompt, maxTokens, temperature, messages, webSearch: useWebSearch } = req.body;
+    const { models: modelIds, prompt, systemPrompt, maxTokens, temperature, messages, webSearch: useWebSearch, modelName: customModelName } = req.body;
+    const pcfg = await getProviderConfig(req);
+    if (!pcfg.apiKey) return res.status(400).json({ error: pcfg.provider + ' API key not configured. Add it via Settings.' });
+
+    /* Direct provider (non-OpenRouter): use the custom model name as-is */
+    if (pcfg.provider !== 'openrouter') {
+      if (!customModelName) return res.status(400).json({ error: 'modelName is required when using ' + pcfg.title });
+      return await runDirectPrompt(pcfg, customModelName, { prompt, systemPrompt, maxTokens, temperature, messages, webSearch: useWebSearch }, req, res);
+    }
+
     if (!modelIds || !Array.isArray(modelIds) || modelIds.length < 1) return res.status(400).json({ error: 'models array required (min 1)' });
 
     let msgs = messages;
@@ -34,9 +103,6 @@ function register(app) {
         } catch (e) { console.warn('[prompt] webSearch failed:', e.message); }
       }
     }
-
-    const pcfg = await getProviderConfig(req);
-    if (!pcfg.apiKey) return res.status(400).json({ error: pcfg.provider + ' API key not configured. Add it via Settings.' });
 
     const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
     const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
@@ -165,39 +231,61 @@ function register(app) {
   }));
 
   app.post('/api/test-prompt-stream', handle(async (req, res) => {
-    const { models: modelIds, messages, maxTokens, temperature, webSearch: useWebSearch } = req.body;
-    if (!modelIds || !Array.isArray(modelIds) || modelIds.length < 1) return res.status(400).json({ error: 'models array required' });
-
+    const { models: modelIds, messages, maxTokens, temperature, webSearch: useWebSearch, modelName: customModelName } = req.body;
     let msgs = messages;
     if (!msgs || !Array.isArray(msgs) || msgs.length === 0) return res.status(400).json({ error: 'messages array required' });
-
-    if (useWebSearch) {
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-      msgs.unshift({ role: 'system', content: 'Current date: ' + dateStr + '. Current time: ' + timeStr + '.' });
-      const lastUserMsg = msgs.filter(m => m.role === 'user').pop();
-      if (lastUserMsg) {
-        try {
-          const searchResults = await webSearch(lastUserMsg.content);
-          if (searchResults && searchResults.length > 0) {
-            const context = 'Web search results:\n' + searchResults.map((r, i) => (i + 1) + '. ' + r.title + ': ' + r.snippet).join('\n');
-            msgs.splice(msgs.length - 1, 0, { role: 'system', content: context });
-          }
-        } catch (e) { console.warn('[stream] webSearch failed:', e.message); }
-      }
-    }
-
-    const modelId = modelIds[0];
-    const model = await db.getModel(modelId);
-    if (!model) return res.status(404).json({ error: 'Model not found' });
 
     const pcfg = await getProviderConfig(req);
     if (!pcfg.apiKey) return res.status(400).json({ error: pcfg.provider + ' API key not configured' });
 
-    let slug = model.openRouterSlug;
+    await streamProviderModel(pcfg, customModelName, msgs, { maxTokens, temperature, webSearch: useWebSearch }, req, res);
+  }));
+}
+
+async function streamProviderModel(pcfg, customModelName, msgs, opts, req, res) {
+  const { maxTokens, temperature, webSearch: useWebSearch } = opts;
+
+  if (pcfg.provider === 'openrouter') {
+    const { models: modelIds } = req.body;
+    if (!modelIds || !Array.isArray(modelIds) || modelIds.length < 1) {
+      res.status(400).json({ error: 'models array required' });
+      return;
+    }
+  }
+
+  if (useWebSearch) {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    msgs.unshift({ role: 'system', content: 'Current date: ' + dateStr + '. Current time: ' + timeStr + '.' });
+    const lastUserMsg = msgs.filter(m => m.role === 'user').pop();
+    if (lastUserMsg) {
+      try {
+        const searchResults = await webSearch(lastUserMsg.content);
+        if (searchResults && searchResults.length > 0) {
+          const context = 'Web search results:\n' + searchResults.map((r, i) => (i + 1) + '. ' + r.title + ': ' + r.snippet).join('\n');
+          msgs.splice(msgs.length - 1, 0, { role: 'system', content: context });
+        }
+      } catch (e) { console.warn('[stream] webSearch failed:', e.message); }
+    }
+  }
+
+  let slug;
+  let model;
+  let modelId;
+  let modelName;
+
+  if (pcfg.provider === 'openrouter') {
+    const { models: modelIds } = req.body;
+    modelId = modelIds[0];
+    model = await db.getModel(modelId);
+    if (!model) {
+      res.status(404).json({ error: 'Model not found' });
+      return;
+    }
+    slug = model.openRouterSlug;
     let pricing;
-    if (!slug && pcfg.provider === 'openrouter') {
+    if (!slug) {
       try { pricing = await fetchLivePricing(true); } catch (e) { console.warn('[stream] pricing fetch failed:', e.message); pricing = { models: {} }; }
       if (!slug && (pricing.models as any)[modelId]) slug = (pricing.models as any)[modelId].openRouterId;
       if (!slug) {
@@ -210,109 +298,122 @@ function register(app) {
           }
         } catch (e) { console.warn('[stream] slug lookup failed:', e.message); }
       }
-      if (!slug) return res.status(400).json({ error: 'No OpenRouter slug found for ' + model.name });
-      if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
-    }
-
-    const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
-    const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
-    const startTime = Date.now();
-
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
-
-    const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 120000);
-    req.on('close', () => { ac.abort(); clearTimeout(timeout); if (!res.writableEnded) res.end(); });
-
-    try {
-      const modelName = pcfg.provider === 'openrouter' ? slug : (model.id || model.name);
-      const headers: Record<string, string> = {
-        'Authorization': 'Bearer ' + pcfg.apiKey,
-        'Content-Type': 'application/json',
-      };
-      if (pcfg.provider === 'openrouter') {
-        headers['HTTP-Referer'] = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001';
-        headers['X-Title'] = 'ModelCompare';
-      }
-
-      const apiRes = await fetch(pcfg.baseUrl + '/chat/completions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ model: modelName, messages: msgs, max_tokens: maxT, temperature: temp, stream: true }),
-        signal: ac.signal,
-      });
-
-      if (!apiRes.ok) {
-        const errData = await apiRes.json().catch(() => ({})) as any;
-        let errorMsg = (pcfg.provider === 'openrouter' ? 'OpenRouter ' : pcfg.title + ' ') + apiRes.status + ': ' + (errData.error?.message || apiRes.statusText);
-        if (pcfg.provider === 'openrouter' && apiRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
-        res.write('data: ' + JSON.stringify({ type: 'error', message: errorMsg }) + '\n\n');
-        res.end();
+      if (!slug) {
+        res.status(400).json({ error: 'No OpenRouter slug found for ' + model.name });
         return;
       }
+      if (!model.openRouterSlug) { model.openRouterSlug = slug; await db.updateModel(model); }
+    }
+    modelName = slug;
+  } else {
+    if (!customModelName) {
+      res.status(400).json({ error: 'modelName is required when using ' + pcfg.title });
+      return;
+    }
+    modelName = customModelName;
+  }
 
-      let fullContent = '';
-      let finishReason = null;
-      let outTokens = 0;
-      let inTokens = 0;
-      let responseModel = slug;
+  const maxT = Math.min(Math.max(parseInt(maxTokens) || 1024, 1), 4096);
+  const temp = temperature != null ? Math.min(Math.max(parseFloat(temperature), 0), 2) : 0.7;
+  const startTime = Date.now();
 
-      const reader = apiRes.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const chunk = JSON.parse(jsonStr);
-            const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
-            const content = delta && delta.content ? delta.content : '';
-            if (content) {
-              fullContent += content;
-              res.write('data: ' + JSON.stringify({ type: 'chunk', content }) + '\n\n');
-            }
-            if (chunk.choices && chunk.choices[0]) {
-              if (chunk.choices[0].finish_reason) finishReason = chunk.choices[0].finish_reason;
-            }
-            if (chunk.usage) {
-              inTokens = chunk.usage.prompt_tokens || 0;
-              outTokens = chunk.usage.completion_tokens || 0;
-            }
-            if (chunk.model) responseModel = chunk.model;
-          } catch (e) { console.warn('[stream] chunk parse failed:', e.message); }
-        }
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 120000);
+  req.on('close', () => { ac.abort(); clearTimeout(timeout); if (!res.writableEnded) res.end(); });
+
+  try {
+    const headers: Record<string, string> = {
+      'Authorization': 'Bearer ' + pcfg.apiKey,
+      'Content-Type': 'application/json',
+    };
+    if (pcfg.provider === 'openrouter') {
+      headers['HTTP-Referer'] = process.env.RENDER_EXTERNAL_URL || 'http://localhost:3001';
+      headers['X-Title'] = 'ModelCompare';
+    }
+
+    const apiRes = await fetch(pcfg.baseUrl + '/chat/completions', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model: modelName, messages: msgs, max_tokens: maxT, temperature: temp, stream: true }),
+      signal: ac.signal,
+    });
+
+    if (!apiRes.ok) {
+      const errData = await apiRes.json().catch(() => ({})) as any;
+      let errorMsg = (pcfg.provider === 'openrouter' ? 'OpenRouter ' : pcfg.title + ' ') + apiRes.status + ': ' + (errData.error?.message || apiRes.statusText);
+      if (pcfg.provider === 'openrouter' && apiRes.status === 402) errorMsg += '. Upgrade at openrouter.ai/settings/credits';
+      res.write('data: ' + JSON.stringify({ type: 'error', message: errorMsg }) + '\n\n');
+      res.end();
+      return;
+    }
+
+    let fullContent = '';
+    let finishReason = null;
+    let outTokens = 0;
+    let inTokens = 0;
+    let responseModel = slug || modelName;
+
+    const reader = apiRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === '[DONE]') continue;
+        try {
+          const chunk = JSON.parse(jsonStr);
+          const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
+          const content = delta && delta.content ? delta.content : '';
+          if (content) {
+            fullContent += content;
+            res.write('data: ' + JSON.stringify({ type: 'chunk', content }) + '\n\n');
+          }
+          if (chunk.choices && chunk.choices[0]) {
+            if (chunk.choices[0].finish_reason) finishReason = chunk.choices[0].finish_reason;
+          }
+          if (chunk.usage) {
+            inTokens = chunk.usage.prompt_tokens || 0;
+            outTokens = chunk.usage.completion_tokens || 0;
+          }
+          if (chunk.model) responseModel = chunk.model;
+        } catch (e) { console.warn('[stream] chunk parse failed:', e.message); }
       }
+    }
 
-      const latency = Date.now() - startTime;
+    const latency = Date.now() - startTime;
 
+    let cost = null;
+    if (pcfg.provider === 'openrouter' && model) {
       const inPrice = model.inputPrice;
       const outPrice = model.outputPrice;
-      const cost = inPrice != null && outPrice != null ? ((inTokens * inPrice) + (outTokens * outPrice)) / 1e6 : null;
-
-      try {
-        await db.logUsage({ modelId, modelName: model.name, slug, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
-      } catch (e) { console.warn('[stream] usage log failed:', e.message); }
-
-      res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: responseModel || slug, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');
-    } catch (e) {
-      const latency = Date.now() - startTime;
-      res.write('data: ' + JSON.stringify({ type: 'error', message: e.name === 'AbortError' ? model.name + ' timed out (60s)' : e.message, latency }) + '\n\n');
+      cost = inPrice != null && outPrice != null ? ((inTokens * inPrice) + (outTokens * outPrice)) / 1e6 : null;
     }
-    res.end();
-  }));
+
+    try {
+      await db.logUsage({ modelId: modelId || modelName, modelName, slug: slug || modelName, promptTokens: inTokens, completionTokens: outTokens, totalTokens: inTokens + outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : 0, latencyMs: latency, finishReason: finishReason || '' });
+    } catch (e) { console.warn('[stream] usage log failed:', e.message); }
+
+    res.write('data: ' + JSON.stringify({ type: 'done', content: fullContent, finishReason, latency, inTokens, outTokens, cost: cost != null ? Math.round(cost * 10000) / 10000 : null, model: responseModel || modelName, _empty: !fullContent && finishReason === 'stop' }) + '\n\n');
+  } catch (e) {
+    const latency = Date.now() - startTime;
+    const modelLabel = model ? model.name : modelName;
+    res.write('data: ' + JSON.stringify({ type: 'error', message: e.name === 'AbortError' ? (modelLabel || 'Model') + ' timed out (60s)' : e.message, latency }) + '\n\n');
+  }
+  res.end();
 }
 
 module.exports = { register };

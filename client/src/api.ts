@@ -88,10 +88,10 @@ export interface PromptResult {
   prompt?: string;
 }
 
-export async function testPrompt(models: string[], prompt: string, systemPrompt?: string, maxTokens?: number, temperature?: number, webSearch?: boolean): Promise<PromptResult> {
+export async function testPrompt(models: string[], prompt: string, systemPrompt?: string, maxTokens?: number, temperature?: number, webSearch?: boolean, modelName?: string): Promise<PromptResult> {
   const res = await fetch(`${BASE}/test-prompt`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ models, prompt, systemPrompt, maxTokens, temperature, webSearch }),
+    body: JSON.stringify({ models, prompt, systemPrompt, maxTokens, temperature, webSearch, modelName }),
   });
   if (!res.ok) throw new Error('Failed to test prompt');
   return res.json();

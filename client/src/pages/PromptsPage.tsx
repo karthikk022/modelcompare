@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import type { Model } from '../types'
-import { fetchModels, testPrompt, getUsage } from '../api'
+import { fetchModels, testPrompt, getUsage, getSettings } from '../api'
 import { UsageChart } from '../components/Charts'
 import type { PromptResult } from '../api'
 
 export default function PromptsPage() {
   const [models, setModels] = useState<Model[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [customModel, setCustomModel] = useState('')
+  const [provider, setProvider] = useState('openrouter')
   const [prompt, setPrompt] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [maxTokens, setMaxTokens] = useState(1024)
@@ -17,16 +19,21 @@ export default function PromptsPage() {
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof getUsage>>>([])
   const [tab, setTab] = useState<'test' | 'history'>('test')
 
-  useEffect(() => { fetchModels().then(({ models }) => setModels(models)) }, [])
+  useEffect(() => {
+    fetchModels().then(({ models }) => setModels(models))
+    getSettings().then(s => setProvider(s.api_provider || 'openrouter')).catch(() => {})
+  }, [])
   useEffect(() => {
     if (tab === 'history') getUsage().then(u => setUsage(u))
   }, [tab])
 
   async function doTest() {
-    if (selectedIds.length === 0 || !prompt.trim()) return
+    if (provider === 'openrouter' && (selectedIds.length === 0 || !prompt.trim())) return
+    if (provider !== 'openrouter' && (!customModel.trim() || !prompt.trim())) return
     setLoading(true)
     try {
-      const data = await testPrompt(selectedIds, prompt, systemPrompt, maxTokens, temperature, webSearch)
+      const ids = provider === 'openrouter' ? selectedIds : []
+      const data = await testPrompt(ids, prompt, systemPrompt, maxTokens, temperature, webSearch, provider !== 'openrouter' ? customModel.trim() : undefined)
       setResults(data.results)
     } catch (e: any) { setResults([{ id: 'error', name: 'Error', content: null, finishReason: null, latency: 0, inTokens: 0, outTokens: 0, cost: null, error: e?.message || 'Request failed' }]) }
     setLoading(false)
@@ -47,18 +54,25 @@ export default function PromptsPage() {
         <div className="prompts-layout">
           <div className="prompts-form">
             <h2>Test Prompt</h2>
-            <div className="form-group">
-              <label>Models ({selectedIds.length} selected)</label>
-              <div className="model-checkboxes">
-                {models.slice(0, 30).map(m => (
-                  <label key={m.id} className="checkbox-label">
-                    <input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleModel(m.id)} />
-                    <span className="provider-dot" style={{ background: m.color || '#666' }} />
-                    {m.name}
-                  </label>
-                ))}
+            {provider === 'openrouter' ? (
+              <div className="form-group">
+                <label>Models ({selectedIds.length} selected)</label>
+                <div className="model-checkboxes">
+                  {models.slice(0, 30).map(m => (
+                    <label key={m.id} className="checkbox-label">
+                      <input type="checkbox" checked={selectedIds.includes(m.id)} onChange={() => toggleModel(m.id)} />
+                      <span className="provider-dot" style={{ background: m.color || '#666' }} />
+                      {m.name}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="form-group">
+                <label>Model Name</label>
+                <input type="text" value={customModel} onChange={e => setCustomModel(e.target.value)} placeholder="e.g. llama-3.3-70b-versatile" className="search-input" style={{ width: '100%' }} />
+              </div>
+            )}
             <div className="form-group">
               <label>System Prompt</label>
               <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={2} placeholder="Optional system prompt..." />

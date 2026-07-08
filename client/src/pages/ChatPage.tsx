@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Model } from '../types'
-import { fetchModels } from '../api'
+import { fetchModels, getSettings } from '../api'
 
 interface TurnResponse {
   content?: string
@@ -37,6 +37,8 @@ function saveConvs(convs: Conversation[]) { localStorage.setItem('conv_history',
 export default function ChatPage() {
   const [models, setModels] = useState<Model[]>([])
   const [modelId, setModelId] = useState('')
+  const [customModel, setCustomModel] = useState('')
+  const [provider, setProvider] = useState('openrouter')
   const [conv, setConv] = useState<Conversation>({ id: '', title: '', modelId: '', turns: [], timestamp: 0, systemPrompt: '', maxTokens: 1024, temperature: 0.7, webSearch: false })
   const [input, setInput] = useState('')
   const [showSys, setShowSys] = useState(false)
@@ -49,7 +51,10 @@ export default function ChatPage() {
   const convRef = useRef(conv)
   convRef.current = conv
 
-  useEffect(() => { fetchModels().then(({ models }) => { setModels(models); if (!modelId && models.length) setModelId(models[0].id) }) }, [])
+  useEffect(() => {
+    fetchModels().then(({ models }) => { setModels(models); if (!modelId && models.length) setModelId(models[0].id) })
+    getSettings().then(s => setProvider(s.api_provider || 'openrouter')).catch(() => {})
+  }, [])
 
   const model = models.find(m => m.id === modelId)
 
@@ -88,9 +93,14 @@ export default function ChatPage() {
     saveConvs(listConvs().filter(x => x.id !== id))
   }
 
-  async function sendMessage() {
+    function getModelIdentifier() {
+      return provider === 'openrouter' ? modelId : customModel.trim()
+    }
+
+    async function sendMessage() {
     const msg = input.trim()
-    if (!msg || !modelId || sending) return
+    const modelIdOrCustom = getModelIdentifier()
+    if (!msg || !modelIdOrCustom || sending) return
     setSending(true)
     const turn: Turn = { userMessage: msg, responses: {} }
     turn.responses[modelId] = { _streaming: true, content: '' }
@@ -119,8 +129,9 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          models: [modelId],
+          models: provider === 'openrouter' ? [modelId] : [],
           messages: msgs,
+          modelName: provider !== 'openrouter' ? customModel.trim() : undefined,
           maxTokens: newConv.maxTokens,
           temperature: newConv.temperature,
           webSearch: newConv.webSearch,
@@ -218,7 +229,7 @@ export default function ChatPage() {
       try {
         const res = await fetch('/api/test-prompt', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ models: [modelId], messages: msgs, maxTokens: conv.maxTokens, temperature: conv.temperature, webSearch: conv.webSearch }),
+          body: JSON.stringify({ models: provider === 'openrouter' ? [modelId] : [], messages: msgs, modelName: provider !== 'openrouter' ? customModel.trim() : undefined, maxTokens: conv.maxTokens, temperature: conv.temperature, webSearch: conv.webSearch }),
         })
         if (!res.ok) { const err = await res.json().catch(() => ({ error: 'Request failed' })); throw new Error(err.error) }
         const d = await res.json()
@@ -270,9 +281,13 @@ export default function ChatPage() {
     <div className="chat-page">
       <div className="chat-header">
         <h2>Chat</h2>
-        <select value={modelId} onChange={e => setModelId(e.target.value)} className="filter-select">
-          {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
+        {provider === 'openrouter' ? (
+          <select value={modelId} onChange={e => setModelId(e.target.value)} className="filter-select">
+            {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        ) : (
+          <input type="text" value={customModel} onChange={e => setCustomModel(e.target.value)} placeholder={'Model name (e.g. llama-3.3-70b-versatile)'} className="search-input" style={{ flex: 1, maxWidth: 320 }} />
+        )}
         <div className="chat-header-actions">
           <button className="btn btn-sm" onClick={() => { setHistoryOpen(!historyOpen); setHistorySearch('') }}>
             History ({listConvs().length})
