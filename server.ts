@@ -1,5 +1,4 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
@@ -87,8 +86,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const PROJECT_ROOT = path.resolve(__dirname, fs.realpathSync(__dirname).includes('dist-server') ? '../..' : '..');
-const reactDistDir = path.join(PROJECT_ROOT, 'client', 'dist');
+const reactDistDir = path.join(__dirname, 'client-dist');
 const reactIndex = path.join(reactDistDir, 'index.html');
 app.use(express.static(reactDistDir));
 app.get(/^\/(?!api\/)/, (req, res) => res.sendFile(reactIndex));
@@ -110,11 +108,6 @@ async function gracefulShutdown(signal) {
 
 async function start() {
   await db.migrateFromJson();
-  if (!require('fs').existsSync(reactIndex)) {
-    console.log('React build not found — building client...');
-    const { execSync } = require('child_process');
-    execSync('npm run build:client', { cwd: PROJECT_ROOT, stdio: 'inherit' });
-  }
   server = app.listen(PORT, '0.0.0.0', async () => {
     console.log('AI Model Compare running on http://localhost:' + PORT);
     console.log('Press Ctrl+C to stop');

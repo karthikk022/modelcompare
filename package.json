@@ -4,7 +4,7 @@
   "description": "AI Model Comparison Dashboard",
   "main": "server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('client/dist', 'dist-server/client-dist', {recursive: true})\"",
     "start": "npm run build:client && npm run build && node dist-server/server.js",
     "dev": "tsx server.ts",
     "build:client": "cd client && npm run build",
